@@ -3,100 +3,76 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>QR Scanner (Telegram Web App)</title>
+  <title>QR Scanner — diag</title>
   <style>
-    body { font-family: Arial, sans-serif; text-align:center; margin:0; padding:1rem; background:#fafafa; }
-    video { width:100%; max-width:480px; border-radius:8px; background:#000; }
-    canvas { display:none; }
-    #status { margin-top:0.6rem; }
-    button { margin-top:0.8rem; padding:0.6rem 1rem; border-radius:6px; font-size:1rem; }
+    body{font-family:Arial,sans-serif;padding:1rem;background:#fafafa}
+    .box{background:#fff;border:1px solid #eee;padding:1rem;border-radius:8px;max-width:720px;margin:0 auto}
+    pre{white-space:pre-wrap;word-break:break-word}
+    video{width:100%;max-width:480px;background:#000;border-radius:8px}
+    button{margin-top:0.6rem;padding:0.6rem 1rem;border-radius:6px}
   </style>
 </head>
 <body>
-  <h2>Сканер QR</h2>
-  <video id="video" playsinline></video>
-  <canvas id="canvas"></canvas>
-  <div id="status">Инициализация камеры…</div>
-  <button id="closeBtn">Закрыть</button>
+  <div class="box">
+    <h2>Диагностика Telegram Web App</h2>
+    <p id="hint">Проверяем окружение…</p>
 
-  <!-- jsQR через CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+    <h3>Информация окружения</h3>
+    <pre id="env"></pre>
 
-  <script>
-    (function(){
-      const tg = window.Telegram?.WebApp;
-      if (tg) tg.expand();
+    <h3>Telegram.WebApp</h3>
+    <pre id="tginfo"></pre>
 
-      const video = document.getElementById('video');
-      const canvas = document.getElementById('canvas');
-      const ctx = canvas.getContext('2d');
-      const status = document.getElementById('status');
-      const closeBtn = document.getElementById('closeBtn');
+    <div id="actions"></div>
 
-      let stream = null;
-      let scanning = false;
+    <hr/>
+    <p>Если вы видите, что <code>tg</code> отсутствует — откройте эту страницу из Telegram, нажав кнопку в боте (InlineKeyboardButton с <code>web_app=WebAppInfo(url)</code>), а не напрямую в браузере.</p>
+  </div>
 
-      async function startCamera() {
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
-          video.srcObject = stream;
-          await video.play();
-          scanning = true;
-          status.textContent = "Сканируем…";
-          requestAnimationFrame(tick);
-        } catch (err) {
-          console.error(err);
-          status.textContent = "Ошибка доступа к камере: " + err.message;
-        }
-      }
+<script>
+  function show(id, text){ document.getElementById(id).textContent = text; }
 
-      function stopCamera() {
-        scanning = false;
-        if (stream) {
-          stream.getTracks().forEach(t => t.stop());
-          stream = null;
-        }
-      }
+  const ua = navigator.userAgent;
+  const origin = location.origin + location.pathname;
+  show('env', `URL: ${location.href}\nOrigin: ${origin}\nUser-Agent: ${ua}\nProtocol: ${location.protocol}`);
 
-      function tick() {
-        if (!scanning) return;
-        if (video.readyState === video.HAVE_ENOUGH_DATA) {
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const code = jsQR(imageData.data, imageData.width, imageData.height);
-          if (code) {
-            status.textContent = "QR найден!";
-            console.log("QR data:", code.data);
-
-            if (tg && tg.sendData) {
-              try {
-                tg.sendData(code.data); // отправка строковых данных боту
-                status.textContent = "Отправлено боту: " + code.data;
-              } catch (e) {
-                status.textContent = "Ошибка отправки: " + e.message;
-              }
-            } else {
-              status.textContent = "tg.sendData недоступен. Откройте внутри Telegram.";
-            }
-
-            stopCamera();
-            setTimeout(()=>{ if (tg && tg.close) tg.close(); }, 1200);
-            return;
-          }
-        }
-        requestAnimationFrame(tick);
-      }
-
-      closeBtn.addEventListener('click', () => {
-        stopCamera();
-        if (tg && tg.close) tg.close();
+  const tg = window.Telegram?.WebApp;
+  if (!tg) {
+    show('tginfo', 'window.Telegram или Telegram.WebApp НЕ найдены.\n\nВозможные причины:\n- Вы открыли страницу в обычном браузере.\n- Страница не была открыта из Telegram кнопки web_app.\n- Вы используете web.telegram.org (может не поддерживать Web App API).\n\nЧто делать:\n1) Откройте бота в мобильном Telegram и нажмите кнопку, которая открывает Web App (InlineKeyboardButton с web_app).\n2) Убедитесь, что URL в кнопке — HTTPS и точный путь до этого файла.\n3) Если тестируете локально, используйте ngrok и HTTPS URL.\n');
+    const actions = document.getElementById('actions');
+    // Кнопка для копирования URL в буфер обмена (удобно, чтобы открыть в мобильном)
+    const btn = document.createElement('button');
+    btn.textContent = 'Скопировать URL в буфер (откройте его в Telegram)';
+    btn.onclick = () => {
+      navigator.clipboard.writeText(location.href).then(()=> {
+        alert('URL скопирован. Откройте бот в Telegram и вставьте ссылку в поле сообщения или используйте кнопку web_app.');
       });
+    };
+    actions.appendChild(btn);
+  } else {
+    // tg найден — покажем доступные методы
+    let info = 'Telegram.WebApp найден!\n';
+    info += `isExpanded: ${tg.isExpanded}\n`;
+    info += `initData: ${!!tg.initData}\n`;
+    info += `version: ${tg.version || 'unknown'}\n`;
+    info += `sendData present: ${typeof tg.sendData === 'function'}\n\n`;
+    info += 'Вы открыли страницу внутри Telegram. tg.sendData доступен — можно отправлять данные боту.';
+    show('tginfo', info);
 
-      // старт при загрузке
-      startCamera();
-    })();
-  </script>
+    // можно показать кнопку закрытия для теста
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = 'Тест: отправить test-data через tg.sendData и закрыть';
+    closeBtn.onclick = () => {
+      try {
+        tg.sendData('test-data-from-webapp');
+        alert('Данные отправлены (test-data-from-webapp).');
+        setTimeout(()=>tg.close(), 800);
+      } catch(e){
+        alert('Ошибка при отправке: ' + e.message);
+      }
+    };
+    document.getElementById('actions').appendChild(closeBtn);
+  }
+</script>
 </body>
 </html>
