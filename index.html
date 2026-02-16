@@ -1,94 +1,71 @@
+<!-- miniapp.html -->
 <!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>QR Scanner (mini app)</title>
-  <style>
-    body {{ font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; margin: 0; padding: 10px; }}
-    #reader {{ width: 100%; max-width: 600px; margin: auto; }}
-    #result {{ margin-top: 12px; word-break: break-all; }}
-    button {{ padding: 8px 12px; border-radius: 8px; border: none; background: #2f9cff; color: white; font-size: 16px; }}
-  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QR Scanner (Telegram Web App)</title>
 </head>
 <body>
-  <h3>Сканер QR</h3>
-  <div id="reader"></div>
-  <div id="result">Ожидание сканирования...</div>
-  <p>
-    <button id="closeBtn">Закрыть</button>
-  </p>
+  <h3>QR Scanner</h3>
+  <video id="video" width="320" height="240" autoplay muted playsinline></video>
+  <div id="result"></div>
+  <button id="stopBtn">Остановить</button>
 
-  <!-- html5-qrcode (CDN). Для production можно положить локально -->
-  <script src="https://unpkg.com/html5-qrcode@2.3.8/minified/html5-qrcode.min.js"></script>
+  <!-- Библиотека для сканирования (пример CDN) -->
+  <script src="https://unpkg.com/qr-scanner@1.4.2/qr-scanner.umd.min.js"></script>
 
   <script>
-    (function() {{
-      const tg = window.Telegram?.WebApp;
-      if (!tg) {{
-        document.getElementById("result").innerText = "Ошибка: WebApp API недоступен. Откройте из Telegram.";
-      }} else {{
-        tg.expand();
-      }}
+    // Telegram WebApp API
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+      tg.expand(); // развернуть окно при открытии (опционально)
+    }
 
-      const resultEl = document.getElementById("result");
-      let scanner = null;
+    const video = document.getElementById('video');
+    const resultDiv = document.getElementById('result');
+    const stopBtn = document.getElementById('stopBtn');
 
-      function onScanSuccess(decodedText, decodedResult) {{
-        // Показать пользователю
-        resultEl.innerText = "Найдено: " + decodedText;
-        // Остановить сканер
-        if (scanner) {{
-          scanner.stop().catch(e => console.warn("stop err", e));
-        }}
-        // Отправить данные боту (web_app.sendData)
-        try {{
-          const payload = {{
-            qr: decodedText,
-            timestamp: Date.now()
-          }};
-          // sendData отправляет данные в поле message.web_app_data у бота
-          tg.sendData(JSON.stringify(payload));
-          // можно закрыть webapp, если хочется
-          // tg.close();
-        }} catch (e) {{
-          console.error("sendData error", e);
-        }}
-      }}
+    // Инициализация сканера (qr-scanner)
+    const qrScanner = new QrScanner(video, result => {
+      console.log('QR:', result);
+      resultDiv.textContent = 'Найдено: ' + result;
 
-      function onScanFailure(error) {{
-        // необязательно логировать каждую ошибку
-        // console.warn(`scan fail`);
-      }}
+      // Отправляем данные боту через Telegram Web App API
+      // Это создаст Update у бота с полем message.web_app_data.data = JSON_string
+      if (tg && typeof tg.sendData === 'function') {
+        tg.sendData(JSON.stringify({ qr: result }));
+      } else {
+        // Если не в WebApp (например открыли в браузере напрямую), можно отправить на ваш сервер
+        fetch('/receive-qr', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ qr: result })
+        }).catch(()=>{});
+      }
 
-      // Инициализация Html5Qrcode
-      (async function initScanner() {{
-        try {{
-          const html5QrCode = new Html5Qrcode("reader");
-          scanner = html5QrCode;
-          const devices = await Html5Qrcode.getCameras();
-          const cameraId = (devices && devices.length) ? devices[0].id : null;
-          if (!cameraId) {{
-            resultEl.innerText = "Камера не найдена или доступ запрещен.";
-            return;
-          }}
-          const config = {{ fps: 10, qrbox: (window.innerWidth < 400 ? 200 : 300) }};
-          await html5QrCode.start(cameraId, config, onScanSuccess, onScanFailure);
-          resultEl.innerText = "Сканирование... наведите камеру на QR.";
-        }} catch (err) {{
-          console.error(err);
-          resultEl.innerText = "Ошибка при запуске камеры: " + err;
-        }}
-      }})();
+      // По желанию остановить сканер после первого результата:
+      qrScanner.stop();
+    });
 
-      document.getElementById("closeBtn").addEventListener("click", function() {{
-        if (scanner) {{
-          scanner.stop().catch(()=>{{}}).finally(()=>{{ if (tg) tg.close(); }});
-        }} else {{
-          if (tg) tg.close();
-        }}
-      }});
-    }})();
+    // Проверка камеры и запуск
+    QrScanner.hasCamera().then(has => {
+      if (!has) {
+        resultDiv.textContent = 'Камера не найдена';
+        return;
+      }
+      qrScanner.start().catch(err => {
+        resultDiv.textContent = 'Не удалось запустить камеру: ' + err;
+      });
+    });
+
+    stopBtn.addEventListener('click', () => {
+      qrScanner.stop();
+      if (tg && typeof tg.close === 'function') tg.close(); // можно закрыть WebApp
+    });
+
+    // Опционально: показать initData для отладки
+    // console.log('initData:', tg?.initData);
   </script>
 </body>
 </html>
