@@ -4,147 +4,27 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <title>QR Сканер — Мини-приложение</title>
-
   <style>
-    :root {
-      --bg: #0b1220;
-      --card: #0f1724;
-      --accent: #11a37f;
-      --muted: #9aa4b2;
-      --white: #eef2f7;
-    }
-
-    html,body {
-      height:100%;
-      margin:0;
-      font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
-      background: linear-gradient(180deg,#071021,#071827);
-      color:var(--white);
-      -webkit-font-smoothing:antialiased;
-      -moz-osx-font-smoothing:grayscale;
-    }
-
-    .app {
-      max-width:480px;
-      margin:0 auto;
-      padding:16px;
-    }
-
-    header {
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:12px;
-      margin-bottom:8px;
-    }
-    header h1 { font-size:18px; margin:0; }
-    header p { margin:0; font-size:12px; color:var(--muted); }
-
-    .viewer {
-      position:relative;
-      width:100%;
-      height:60vh;
-      min-height:380px;
-      background:#000;
-      border-radius:12px;
-      overflow:hidden;
-      box-shadow:0 8px 30px rgba(2,6,23,0.6);
-    }
-
-    video {
-      width:100%;
-      height:100%;
-      object-fit:cover;
-      transform:scaleX(-1); /* mirror for user facing; we'll unmirror overlay when needed */
-    }
-
-    canvas { display:none; } /* used for processing */
-
-    /* overlay scanning guide */
-    .overlay {
-      position:absolute;
-      inset:0;
-      pointer-events:none;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-    }
-
-    .frame {
-      width:78%;
-      aspect-ratio:1/1;
-      border-radius:10px;
-      box-shadow:0 0 0 9999px rgba(0,0,0,0.35) inset;
-      border: 2px dashed rgba(255,255,255,0.12);
-      position:relative;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-    }
-
-    .hint {
-      position:absolute;
-      bottom:12px;
-      left:12px;
-      right:12px;
-      text-align:center;
-      font-size:13px;
-      color:var(--muted);
-      pointer-events:auto;
-    }
-
-    .controls {
-      margin-top:12px;
-      display:flex;
-      gap:8px;
-      justify-content:space-between;
-      align-items:center;
-    }
-
-    .btn {
-      background:var(--card);
-      border:1px solid rgba(255,255,255,0.04);
-      color:var(--white);
-      padding:10px 12px;
-      border-radius:10px;
-      font-size:15px;
-      flex:1;
-      text-align:center;
-    }
-    .btn.primary {
-      background: linear-gradient(90deg,var(--accent),#0bc09b);
-      color:#021016;
-      font-weight:600;
-      flex:2;
-    }
-    .small {
-      font-size:13px;
-      padding:8px 10px;
-    }
-
-    .result {
-      margin-top:12px;
-      background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
-      border-radius:10px;
-      padding:10px;
-      font-size:14px;
-      color:var(--white);
-      word-break:break-all;
-    }
-
-    .muted { color:var(--muted); font-size:13px; }
-
-    .row {
-      display:flex;
-      gap:8px;
-      margin-top:8px;
-    }
-
-    .hidden { display:none !important; }
-
-    input[type=file] { display:none; }
-
-    footer { margin-top:14px; text-align:center; color:var(--muted); font-size:12px; }
+    :root{--bg:#071021;--card:#0f1724;--accent:#11a37f;--muted:#9aa4b2;--white:#eef2f7}
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,Arial;background:linear-gradient(180deg,#071021,#071827);color:var(--white)}
+    .app{max-width:480px;margin:0 auto;padding:16px}
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+    header h1{font-size:18px;margin:0} header p{margin:0;font-size:12px;color:var(--muted)}
+    .viewer{position:relative;width:100%;height:60vh;min-height:380px;background:#000;border-radius:12px;overflow:hidden}
+    video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+    canvas{display:none}
+    .overlay{position:absolute;inset:0;pointer-events:none;display:flex;align-items:center;justify-content:center}
+    .frame{width:78%;aspect-ratio:1/1;border-radius:10px;box-shadow:0 0 0 9999px rgba(0,0,0,0.35) inset;border:2px dashed rgba(255,255,255,0.12);display:flex;align-items:center;justify-content:center}
+    .hint{position:absolute;bottom:12px;left:12px;right:12px;text-align:center;font-size:13px;color:var(--muted);pointer-events:auto}
+    .controls{margin-top:12px;display:flex;gap:8px;justify-content:space-between;align-items:center}
+    .btn{background:var(--card);border:1px solid rgba(255,255,255,0.04);color:var(--white);padding:10px 12px;border-radius:10px;font-size:15px;flex:1;text-align:center}
+    .btn.primary{background:linear-gradient(90deg,var(--accent),#0bc09b);color:#021016;font-weight:600;flex:2}
+    .small{font-size:13px;padding:8px 10px}
+    .result{margin-top:12px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:10px;padding:10px;font-size:14px;color:var(--white);word-break:break-all}
+    .muted{color:var(--muted);font-size:13px}
+    .row{display:flex;gap:8px;margin-top:8px}
+    input[type=file]{display:none}
+    footer{margin-top:14px;text-align:center;color:var(--muted);font-size:12px}
   </style>
 </head>
 <body>
@@ -161,11 +41,8 @@
       <div class="viewer" id="viewer">
         <video id="video" autoplay playsinline></video>
         <canvas id="canvas"></canvas>
-
         <div class="overlay" aria-hidden="true">
-          <div class="frame" id="frame">
-            <!-- visual guide -->
-          </div>
+          <div class="frame" id="frame"></div>
         </div>
       </div>
 
@@ -185,18 +62,16 @@
       </div>
 
       <div class="result" id="result">Результат: <span id="resultText" class="muted">пока не найдено</span></div>
-
       <footer>Если камера не работает — разрешите доступ к камере в настройках браузера / Telegram.</footer>
     </main>
   </div>
 
-  <!-- jsQR для декодирования (CDN). Если нужно заблокировать внешние запросы — замените на локальную версию. -->
+  <!-- jsQR CDN -->
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 
   <script>
-    // Простая дружелюбная обёртка: работает внутри Telegram WebApp, но также в обычном браузере.
     const tg = window.Telegram?.WebApp;
-    try { if (tg && typeof tg.ready === 'function') tg.ready(); } catch(e){ /* ignore */ }
+    try { if (tg && typeof tg.ready === 'function') tg.ready(); } catch(e){}
 
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
@@ -211,11 +86,10 @@
 
     let scanning = true;
     let currentStream = null;
-    let useFront = false; // switch camera flag (false -> environment/back)
+    let useFront = false;
     let torchOn = false;
     let lastResult = "";
 
-    // start video stream with desired constraints
     async function startCamera() {
       stopCamera();
       const constraints = {
@@ -229,14 +103,10 @@
       try {
         currentStream = await navigator.mediaDevices.getUserMedia(constraints);
         video.srcObject = currentStream;
-
-        // Unmirror if using environment/back camera
         video.addEventListener('loadedmetadata', () => {
-          // If using user-facing camera keep mirror, otherwise unmirror
           if (!useFront) video.style.transform = "scaleX(1)";
           else video.style.transform = "scaleX(-1)";
         });
-
         await video.play();
         scanning = true;
         stopStartBtn.textContent = "Остановить";
@@ -256,7 +126,6 @@
       stopStartBtn.textContent = "Запустить";
     }
 
-    // attempt to toggle torch if supported
     async function toggleTorch() {
       if (!currentStream) return;
       const track = currentStream.getVideoTracks()[0];
@@ -276,39 +145,28 @@
       }
     }
 
-    // main scan loop
     function tick() {
       if (!scanning || video.readyState !== video.HAVE_ENOUGH_DATA) {
         requestAnimationFrame(tick);
         return;
       }
 
-      // size the canvas to video
       const vw = video.videoWidth;
       const vh = video.videoHeight;
-      const vwAspect = vw / vh;
-      const visibleWidth = video.clientWidth;
-      const visibleHeight = video.clientHeight;
-
       canvas.width = vw;
       canvas.height = vh;
 
-      // draw frame
       ctx.drawImage(video, 0, 0, vw, vh);
 
-      // we can crop to center square (frame area) for faster scanning
       const side = Math.min(vw, vh);
       const sx = (vw - side) / 2;
       const sy = (vh - side) / 2;
       const imageData = ctx.getImageData(sx, sy, side, side);
 
-      // jsQR expects Uint8ClampedArray, width, height
       const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "attemptBoth" });
 
       if (code) {
-        // draw bounding box on visible overlay
         drawBoundingBox(code.location, sx, sy, vw, vh);
-
         if (code.data && code.data !== lastResult) {
           lastResult = code.data;
           onQrFound(code.data);
@@ -319,8 +177,6 @@
     }
 
     function drawBoundingBox(loc, sx, sy, vw, vh) {
-      // small overlay drawn on top of video using a temporary canvas (we reuse the same canvas)
-      // We'll draw lines on top of video by using another layer - for simplicity, draw on the same ctx but restore afterwards.
       ctx.strokeStyle = "rgba(17,163,127,0.9)";
       ctx.lineWidth = Math.max(2, Math.min(vw, vh) * 0.005);
       ctx.beginPath();
@@ -335,29 +191,23 @@
     function onQrFound(text) {
       resultTextEl.textContent = text;
       resultTextEl.classList.remove('muted');
-      // auto-copy? no — provide button. But we can auto-send to Telegram WebApp.
-      // Send data to Telegram:
+
       try {
         if (tg && typeof tg.sendData === 'function') {
-          // format: JSON with key "qr" to match your bot handler
+          // Отправляем в бот через Telegram (message.web_app_data.data)
           tg.sendData(JSON.stringify({ qr: text }));
         }
       } catch (e) {
         console.warn("Не удалось отправить данные в Telegram:", e);
       }
-      // Optionally stop scanning so user sees result
-      // scanning = false; // uncomment if you want to stop after first successful decode
     }
 
-    // UI bindings
     sendBtn.addEventListener('click', () => {
       const txt = lastResult || resultTextEl.textContent || "";
       if (!txt) return alert("QR ещё не распознан.");
       try {
         if (tg && typeof tg.sendData === 'function') {
           tg.sendData(JSON.stringify({ qr: txt }));
-          // optionally close webapp:
-          // tg.close();
         } else {
           alert("Telegram WebApp API недоступен (вы открыли страницу не из Telegram).");
         }
@@ -379,26 +229,17 @@
     });
 
     stopStartBtn.addEventListener('click', () => {
-      if (scanning) {
-        stopCamera();
-      } else {
-        startCamera();
-      }
+      if (scanning) stopCamera(); else startCamera();
     });
 
     toggleTorchBtn.addEventListener('click', () => toggleTorch());
-    switchCamBtn.addEventListener('click', async () => {
-      useFront = !useFront;
-      await startCamera();
-    });
+    switchCamBtn.addEventListener('click', async () => { useFront = !useFront; await startCamera(); });
 
-    // file input fallback: decode QR from uploaded image
     pickImage.addEventListener('change', async (ev) => {
       const f = ev.target.files && ev.target.files[0];
       if (!f) return;
       const img = new Image();
       img.onload = () => {
-        // draw on canvas and decode
         const w = img.width, h = img.height;
         canvas.width = w; canvas.height = h;
         ctx.drawImage(img, 0, 0, w, h);
@@ -417,17 +258,10 @@
       pickImage.value = "";
     });
 
-    // start automatically when page loads (if allowed)
     (async () => {
-      // small delay to let Telegram WebApp UI settle
-      try {
-        await startCamera();
-      } catch (e) {
-        console.warn("Camera auto-start failed:", e);
-      }
+      try { await startCamera(); } catch (e) { console.warn("Camera auto-start failed:", e); }
     })();
 
-    // Clean up on unload
     window.addEventListener('pagehide', stopCamera);
     window.addEventListener('beforeunload', stopCamera);
   </script>
