@@ -1,140 +1,176 @@
 <!doctype html>
 <html lang="ru">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>WebApp Diagnostic — QR</title>
-<style>
-  body{font-family:system-ui, -apple-system, Roboto, Arial; padding:12px;}
-  pre{background:#f6f8fa;border-radius:6px;padding:8px;white-space:pre-wrap;word-break:break-word;}
-  button{margin:6px 6px 6px 0;padding:8px 12px;border-radius:8px;}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Telegram WebApp — Demo</title>
+  <!-- Telegram Web App SDK -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root{font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial; color:#222}
+    body{margin:0;padding:20px;background:#f6f7fb}
+    .card{max-width:520px;margin:30px auto;padding:20px;border-radius:12px;background:#fff;box-shadow:0 6px 18px rgba(20,20,50,0.06)}
+    h1{font-size:20px;margin:0 0 8px}
+    p{margin:0 0 12px;color:#555}
+    .user {display:flex;gap:12px;align-items:center;margin-bottom:14px}
+    .avatar{width:64px;height:64px;border-radius:12px;background:#e6e7ee;display:flex;align-items:center;justify-content:center;font-weight:600;color:#777}
+    .meta{line-height:1.2}
+    .meta .name{font-weight:700}
+    .meta .sub{font-size:13px;color:#666}
+    .controls{display:flex;gap:8px;flex-wrap:wrap}
+    button{padding:8px 12px;border-radius:8px;border:1px solid #e0e0ee;background:#fff;cursor:pointer}
+    button.primary{background:#2f80ed;color:#fff;border-color:transparent}
+    .hint{font-size:13px;color:#888;margin-top:12px}
+    .error{color:#b00020}
+  </style>
 </head>
 <body>
-  <h3>Diagnostic: Telegram.WebApp</h3>
-  <p>Нажмите <b>Show diagnostic</b>, затем скопируйте текст и пришлите сюда.</p>
+  <div class="card" id="app">
+    <h1>Telegram WebApp — Пример</h1>
+    <p>Ниже показаны данные пользователя из Telegram (если доступны).</p>
 
-  <div>
-    <button id="show">Show diagnostic</button>
-    <button id="copy">Copy to clipboard</button>
-    <button id="testSend" style="display:none">Попытаться вызвать tg.sendData("PING")</button>
+    <div id="userArea">
+      <div class="user">
+        <div class="avatar" id="avatar">?</div>
+        <div class="meta">
+          <div class="name" id="displayName">Не определено</div>
+          <div class="sub" id="displaySub">—</div>
+        </div>
+      </div>
+
+      <div><strong>ID:</strong> <span id="userId">—</span></div>
+      <div class="controls" style="margin-top:12px">
+        <button id="copyBtn">Копировать ID</button>
+        <button id="sendBtn" class="primary">Отправить ID боту</button>
+        <button id="closeBtn">Закрыть WebApp</button>
+      </div>
+
+      <div class="hint" id="hint">Ожидание данных...</div>
+    </div>
   </div>
 
-  <pre id="out">Waiting...</pre>
+  <script>
+    // Ваш изначальный помощник — функция получения user id
+    async function getUserID() {
+        const tg = window.Telegram?.WebApp;
+        if (tg?.initDataUnsafe?.user?.id) {
+            console.log("User data from Telegram:", JSON.stringify(tg.initDataUnsafe.user));
+            return tg.initDataUnsafe.user.id;
+        }
 
-<script>
-function getSafe(path, root=window){
-  try{ return path.split('.').reduce((o,k)=> o && o[k], root); }catch(e){ return undefined; }
-}
+        const urlParams = new URLSearchParams(window.location.search);
+        const userID = urlParams.get('user_id');
+        if (userID) {
+            console.log("User ID from URL:", userID);
+            return userID;
+        }
 
-document.getElementById('show').addEventListener('click', ()=> {
-  const tg = getSafe('Telegram.WebApp', window);
-  const hasTelegram = !!getSafe('Telegram', window);
-  const hasWebApp = !!tg;
-  const hasSendData = !!getSafe('Telegram.WebApp.sendData', window);
-  const ua = navigator.userAgent || '';
-  const ref = document.referrer || '';
-  const topSelf = (window.top === window.self);
-  const locationHref = location.href;
-  let initData = null;
-  try { initData = tg && tg.initData ? tg.initData : null; } catch(e){ initData = "<<error reading initData: "+e+">>"; }
-
-  const info = {
-    time: (new Date()).toISOString(),
-    userAgent: ua,
-    location: locationHref,
-    documentReferrer: ref,
-    inIframe: !topSelf,
-    hasTelegramObject: hasTelegram,
-    hasWebAppObject: hasWebApp,
-    hasSendData: hasSendData,
-    tg_initData_sample: initData ? String(initData).slice(0,200) : null
-  };
-
-  const text = JSON.stringify(info, null, 2);
-  document.getElementById('out').textContent = text;
-
-  // show test button only if tg exists but sendData missing (for manual testing)
-  if (hasWebApp && !hasSendData) {
-    document.getElementById('testSend').style.display = 'inline-block';
-  } else {
-    document.getElementById('testSend').style.display = 'none';
-  }
-});
-
-document.getElementById('copy').addEventListener('click', async ()=> {
-  const txt = document.getElementById('out').textContent;
-  try { await navigator.clipboard.writeText(txt); alert('Copied to clipboard'); } catch(e){ alert('Copy failed: '+e); }
-});
-
-document.getElementById('testSend').addEventListener('click', ()=> {
-  try {
-    if (window.Telegram && window.Telegram.WebApp && typeof window.Telegram.WebApp.sendData === 'function') {
-      window.Telegram.WebApp.sendData('DIAGNOSTIC_PING');
-      alert('sendData called');
-    } else {
-      alert('sendData not available');
+        throw new Error("User ID not available");
     }
-  } catch(e){ alert('Error: '+e); }
-});
-  <!-- кусок JS, вставьте в ваш index.html -->
-// Парсим tgWebAppData из location.hash
-function parseTgWebAppDataFromHash() {
-  const h = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
-  const params = new URLSearchParams(h);
-  const raw = params.get('tgWebAppData');
-  if (!raw) return null;
-  // raw — urlencoded query-string, например "query_id=...&user=%7B...%7D&auth_date=...&hash=..."
-  const decoded = decodeURIComponent(raw);
-  const q = new URLSearchParams(decoded);
-  const out = {};
-  for (const [k,v] of q.entries()) out[k] = v;
-  // user может быть закодирован несколько раз — попробуем декодировать и распарсить JSON
-  if (out.user) {
-    try {
-      let userStr = out.user;
-      // если видим %7B внутри — декодируем ещё раз
-      if (userStr.includes('%7B') || userStr.includes('%257B')) userStr = decodeURIComponent(userStr);
-      out.user = JSON.parse(userStr);
-    } catch(e) {
-      console.warn("Can't parse user JSON:", e);
-      // оставим оригинал
+
+    // Вспомогательная функция, чтобы получить всю user информацию (если есть)
+    function getUserInfo() {
+      const tg = window.Telegram?.WebApp;
+      return tg?.initDataUnsafe?.user ?? null;
     }
-  }
-  return out;
-}
 
-// Пример обработчика успешного сканирования (подставьте ваш onScanSuccess)
-async function onScanSuccess(scannedText) {
-  document.getElementById('output').textContent = "Считано: " + scannedText;
+    // Инициализация UI
+    (async function init() {
+      const hintEl = document.getElementById('hint');
+      const idEl = document.getElementById('userId');
+      const nameEl = document.getElementById('displayName');
+      const subEl = document.getElementById('displaySub');
+      const avatarEl = document.getElementById('avatar');
 
-  const init = parseTgWebAppDataFromHash();
-  if (!init) {
-    alert("Ошибка: нет tgWebAppData в URL. Откройте mini-app через кнопку Web App в чате с ботом.");
-    return;
-  }
+      // Нажатия на кнопки
+      document.getElementById('copyBtn').addEventListener('click', async () => {
+        const id = idEl.textContent;
+        if (!id || id === '—') {
+          alert('ID отсутствует для копирования');
+          return;
+        }
+        try {
+          await navigator.clipboard.writeText(id);
+          hintEl.textContent = 'ID скопирован в буфер обмена';
+        } catch (e) {
+          // fallback
+          const ta = document.createElement('textarea');
+          ta.value = id;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          ta.remove();
+          hintEl.textContent = 'ID скопирован (fallback)';
+        }
+      });
 
-  // Постим на ваш сервер (замените URL на ваш endpoint)
-  try {
-    const resp = await fetch("https://your-server.example.com/api/webapp/submit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        init: init,                 // вся структура tgWebAppData: query_id, user, auth_date, hash, signature...
-        payload: scannedText        // то, что считали из QR
-      })
-    });
+      document.getElementById('sendBtn').addEventListener('click', () => {
+        const tg = window.Telegram?.WebApp;
+        if (!tg) {
+          alert('Методы Telegram WebApp недоступны в этом окружении.');
+          return;
+        }
+        const id = idEl.textContent;
+        if (!id || id === '—') {
+          alert('ID отсутствует, нечего отправлять');
+          return;
+        }
+        // Отправляем произвольную полезную нагрузку боту (бот получит через update)
+        try {
+          tg.sendData(JSON.stringify({ type: 'user_id', user_id: id, ts: Date.now() }));
+          hintEl.textContent = 'Данные отправлены боту через tg.sendData()';
+        } catch (err) {
+          console.error(err);
+          hintEl.textContent = 'Ошибка при отправке данных: ' + (err.message || err);
+        }
+      });
 
-    const j = await resp.json();
-    if (!resp.ok) throw new Error(j.detail || JSON.stringify(j));
-    document.getElementById('output').textContent += "\n\nДанные отправлены на сервер.";
-  } catch (err) {
-    console.error(err);
-    alert("Ошибка отправки на сервер: " + err);
-  }
-}
-</script>
+      document.getElementById('closeBtn').addEventListener('click', () => {
+        const tg = window.Telegram?.WebApp;
+        if (tg?.close) tg.close();
+        else window.close?.();
+      });
 
-</script>
+      // Попробуем показать информацию о пользователе
+      try {
+        const user = getUserInfo();
+        if (user) {
+          const id = String(user.id);
+          idEl.textContent = id;
+          nameEl.textContent = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username || 'Пользователь';
+          subEl.textContent = user.username ? '@' + user.username : '—';
+          // аватар: если есть поле photo_url — используем его, иначе первая буква
+          if (user.photo_url) {
+            const img = document.createElement('img');
+            img.src = user.photo_url;
+            img.alt = nameEl.textContent;
+            img.width = 64; img.height = 64;
+            img.style.borderRadius = '12px';
+            avatarEl.innerHTML = '';
+            avatarEl.appendChild(img);
+          } else {
+            avatarEl.textContent = (user.first_name ? user.first_name[0] : 'U').toUpperCase();
+          }
+          hintEl.textContent = 'Данные получены из Telegram: initDataUnsafe.user';
+          console.log('initDataUnsafe.user =', user);
+          return;
+        }
+
+        // Если нет initDataUnsafe, пробуем получить только ID через getUserID()
+        const idFromFn = await getUserID();
+        idEl.textContent = idFromFn;
+        nameEl.textContent = 'ID из URL/инициализации';
+        subEl.textContent = '—';
+        avatarEl.textContent = idFromFn.slice(-2);
+        hintEl.textContent = 'ID получен, полные данные пользователя недоступны.';
+      } catch (err) {
+        console.warn('User not available:', err);
+        idEl.textContent = '—';
+        nameEl.textContent = 'Вне Telegram';
+        subEl.textContent = 'Запустите в Telegram WebApp или добавьте ?user_id=... в URL';
+        hintEl.innerHTML = '<span class="error">Пользовательские данные не найдены:</span> ' + (err.message || err);
+      }
+    })();
+  </script>
 </body>
 </html>
