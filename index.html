@@ -1,116 +1,82 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Mini App — QR Scanner</title>
-  <style>
-    body { font-family: system-ui, -apple-system, Roboto, "Helvetica Neue", Arial; margin: 12px; }
-    #reader { width: 100%; max-width: 480px; margin: 0 auto; }
-    #output { white-space: pre-wrap; margin-top: 12px; word-break: break-word; }
-    .notice { padding: 8px 10px; border-radius: 8px; margin-bottom: 10px; background: #fffbdd; }
-    button { margin-top: 10px; padding: 8px 12px; border-radius: 8px; }
-  </style>
-  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WebApp Diagnostic — QR</title>
+<style>
+  body{font-family:system-ui, -apple-system, Roboto, Arial; padding:12px;}
+  pre{background:#f6f8fa;border-radius:6px;padding:8px;white-space:pre-wrap;word-break:break-word;}
+  button{margin:6px 6px 6px 0;padding:8px 12px;border-radius:8px;}
+</style>
 </head>
 <body>
-  <h3>Сканер QR</h3>
-  <div id="status" class="notice" style="display:none;"></div>
+  <h3>Diagnostic: Telegram.WebApp</h3>
+  <p>Нажмите <b>Show diagnostic</b>, затем скопируйте текст и пришлите сюда.</p>
 
-  <div id="reader"></div>
-  <div id="output">Ожидание сканирования...</div>
-
-  <div style="margin-top:12px;">
-    <button id="stopBtn">Остановить сканер</button>
-    <button id="testSendBtn" style="margin-left:8px; display:none;">(ТЕСТ) Отправить тестовые данные в бот</button>
+  <div>
+    <button id="show">Show diagnostic</button>
+    <button id="copy">Copy to clipboard</button>
+    <button id="testSend" style="display:none">Попытаться вызвать tg.sendData("PING")</button>
   </div>
 
+  <pre id="out">Waiting...</pre>
+
 <script>
-  const statusEl = document.getElementById('status');
-  const output = document.getElementById('output');
-  const stopBtn = document.getElementById('stopBtn');
-  const testSendBtn = document.getElementById('testSendBtn');
+function getSafe(path, root=window){
+  try{ return path.split('.').reduce((o,k)=> o && o[k], root); }catch(e){ return undefined; }
+}
 
-  // Проверка наличия Telegram.WebApp
-  const isInTelegram = !!(window.Telegram && window.Telegram.WebApp);
-  let tg = null;
+document.getElementById('show').addEventListener('click', ()=> {
+  const tg = getSafe('Telegram.WebApp', window);
+  const hasTelegram = !!getSafe('Telegram', window);
+  const hasWebApp = !!tg;
+  const hasSendData = !!getSafe('Telegram.WebApp.sendData', window);
+  const ua = navigator.userAgent || '';
+  const ref = document.referrer || '';
+  const topSelf = (window.top === window.self);
+  const locationHref = location.href;
+  let initData = null;
+  try { initData = tg && tg.initData ? tg.initData : null; } catch(e){ initData = "<<error reading initData: "+e+">>"; }
 
-  if (isInTelegram) {
-    tg = window.Telegram.WebApp;
-    try { tg.ready(); } catch(e){ console.warn("tg.ready() failed:", e); }
-    statusEl.style.display = 'none';
-    testSendBtn.style.display = 'none';
+  const info = {
+    time: (new Date()).toISOString(),
+    userAgent: ua,
+    location: locationHref,
+    documentReferrer: ref,
+    inIframe: !topSelf,
+    hasTelegramObject: hasTelegram,
+    hasWebAppObject: hasWebApp,
+    hasSendData: hasSendData,
+    tg_initData_sample: initData ? String(initData).slice(0,200) : null
+  };
+
+  const text = JSON.stringify(info, null, 2);
+  document.getElementById('out').textContent = text;
+
+  // show test button only if tg exists but sendData missing (for manual testing)
+  if (hasWebApp && !hasSendData) {
+    document.getElementById('testSend').style.display = 'inline-block';
   } else {
-    // Покажем заметку пользователю
-    statusEl.style.display = 'block';
-    statusEl.innerHTML = '<strong>Внимание:</strong> вы открыли страницу вне Telegram. ' +
-      'Чтобы WebApp API был доступен, откройте этот mini-app через кнопку Web App внутри клиента Telegram (в чате с ботом). ' +
-      'Внешний браузер не позволяет отправлять данные боту.';
-    // Покажем кнопку для локальной отладки
-    testSendBtn.style.display = 'inline-block';
-    // Мок для локальной разработки (для того, чтобы UI можно было тестировать)
-    window.Telegram = window.Telegram || {};
-    window.Telegram.WebApp = {
-      initData: null,
-      isMock: true,
-      sendData: function(data) {
-        // Мок: покажем alert и в консоль
-        console.log("MOCK sendData:", data);
-        alert("MOCK: данные, которые были бы отправлены боту:\n\n" + data);
-      },
-      ready: function(){ /* noop */ }
-    };
-    tg = window.Telegram.WebApp;
+    document.getElementById('testSend').style.display = 'none';
   }
+});
 
-  // Функция отправки данных в Telegram WebApp API
-  function sendToBot(payload) {
-    if (tg && typeof tg.sendData === 'function') {
-      try {
-        tg.sendData(payload);
-        output.textContent = "Считано: " + payload + "\n\nДанные отправлены (или смоделированы) через Telegram.WebApp.sendData().";
-      } catch (err) {
-        console.error("sendData failed:", err);
-        output.textContent = "Ошибка при отправке данных: " + err;
-      }
+document.getElementById('copy').addEventListener('click', async ()=> {
+  const txt = document.getElementById('out').textContent;
+  try { await navigator.clipboard.writeText(txt); alert('Copied to clipboard'); } catch(e){ alert('Copy failed: '+e); }
+});
+
+document.getElementById('testSend').addEventListener('click', ()=> {
+  try {
+    if (window.Telegram && window.Telegram.WebApp && typeof window.Telegram.WebApp.sendData === 'function') {
+      window.Telegram.WebApp.sendData('DIAGNOSTIC_PING');
+      alert('sendData called');
     } else {
-      output.textContent = "Telegram.WebApp.sendData недоступен.";
+      alert('sendData not available');
     }
-  }
-
-  // Обработчики для html5-qrcode
-  function onScanSuccess(decodedText, decodedResult) {
-    // Можно отправлять JSON, если нужно
-    sendToBot(decodedText);
-    // остановим сканер (опционально)
-    try { html5QrcodeScanner.clear(); } catch(e){ console.warn(e); }
-  }
-  function onScanFailure(error) {
-    // не критично — можно логировать
-  }
-
-  const html5QrcodeScanner = new Html5QrcodeScanner(
-    "reader",
-    { fps: 10, qrbox: { width: 250, height: 250 } },
-    false
-  );
-  html5QrcodeScanner.render(onScanSuccess, onScanFailure);
-
-  stopBtn.addEventListener('click', () => {
-    html5QrcodeScanner.clear()
-      .then(() => {
-        output.textContent = "Сканер остановлен.";
-      })
-      .catch(err => {
-        output.textContent = "Ошибка при остановке: " + err;
-      });
-  });
-
-  // Кнопка для локального теста: симуляция отправки
-  testSendBtn.addEventListener('click', () => {
-    const fake = prompt("Введите тестовую строку, которая будет отправлена боту (локальная симуляция):", "TEST_QR_12345");
-    if (fake !== null) sendToBot(fake);
-  });
+  } catch(e){ alert('Error: '+e); }
+});
 </script>
 </body>
 </html>
