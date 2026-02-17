@@ -3,174 +3,308 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Telegram WebApp — Demo</title>
-  <!-- Telegram Web App SDK -->
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <title>Сканер QR-кодов</title>
+
+  <!-- jsQR: декодер QR из canvas -->
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+
   <style>
-    :root{font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial; color:#222}
-    body{margin:0;padding:20px;background:#f6f7fb}
-    .card{max-width:520px;margin:30px auto;padding:20px;border-radius:12px;background:#fff;box-shadow:0 6px 18px rgba(20,20,50,0.06)}
-    h1{font-size:20px;margin:0 0 8px}
-    p{margin:0 0 12px;color:#555}
-    .user {display:flex;gap:12px;align-items:center;margin-bottom:14px}
-    .avatar{width:64px;height:64px;border-radius:12px;background:#e6e7ee;display:flex;align-items:center;justify-content:center;font-weight:600;color:#777}
-    .meta{line-height:1.2}
-    .meta .name{font-weight:700}
-    .meta .sub{font-size:13px;color:#666}
-    .controls{display:flex;gap:8px;flex-wrap:wrap}
-    button{padding:8px 12px;border-radius:8px;border:1px solid #e0e0ee;background:#fff;cursor:pointer}
-    button.primary{background:#2f80ed;color:#fff;border-color:transparent}
-    .hint{font-size:13px;color:#888;margin-top:12px}
-    .error{color:#b00020}
+    :root{
+      --bg:#f9f9fb;
+      --card:#ffffff;
+      --accent:#0077cc;
+      --muted:#7f8c8d;
+      --shadow: rgba(0,0,0,0.08);
+    }
+    html,body{height:100%;margin:0;font-family:Inter,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:#222}
+    .wrap{max-width:920px;margin:24px auto;padding:20px;box-sizing:border-box}
+    .card{background:var(--card);border-radius:12px;padding:18px;box-shadow:0 8px 30px var(--shadow)}
+    h1{margin:0 0 12px;font-size:20px;text-align:center}
+    #scanArea{position:relative;border-radius:10px;overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center;height:360px}
+    video{width:100%;height:100%;object-fit:cover;display:block}
+    canvas{display:none}
+    .scanner-line{position:absolute;left:0;height:4px;width:100%;background:linear-gradient(90deg, rgba(0,255,0,0.0), rgba(0,255,0,0.9), rgba(0,255,0,0.0));animation:scanY 2000ms linear infinite;mix-blend-mode:screen;pointer-events:none}
+    @keyframes scanY{0%{top:0%}100%{top:100%}}
+    .controls{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+    button, .file-btn {
+      appearance:none;border:0;padding:12px 14px;border-radius:10px;font-weight:600;cursor:pointer;
+      background:var(--accent);color:#fff;box-shadow:0 6px 18px var(--shadow);flex:1;
+    }
+    .btn-ghost{background:#f1f3f5;color:#222;border:1px solid #e6e9ec;box-shadow:none}
+    #resultArea{margin-top:14px;padding:12px;border-radius:10px;background:#f6f8fa;border:1px solid #e9eef5;display:none}
+    #scanResult{word-break:break-all;margin:0 0 8px}
+    .small{font-size:13px;color:var(--muted)}
+    .row{display:flex;gap:10px;align-items:center}
+    input[type=file]{display:none}
+    .file-label{display:inline-block;padding:10px 12px;border-radius:8px;background:#eef6ff;color:var(--accent);cursor:pointer;border:1px dashed rgba(0,119,204,0.2)}
+    .hint{margin-top:8px;font-size:13px;color:var(--muted);text-align:center}
+    @media (max-width:520px){
+      .controls{flex-direction:column}
+      button{width:100%}
+    }
   </style>
 </head>
 <body>
-  <div class="card" id="app">
-    <h1>Telegram WebApp — Пример</h1>
-    <p>Ниже показаны данные пользователя из Telegram (если доступны).</p>
+  <div class="wrap">
+    <div class="card">
+      <h1>Сканер QR-кодов</h1>
 
-    <div id="userArea">
-      <div class="user">
-        <div class="avatar" id="avatar">?</div>
-        <div class="meta">
-          <div class="name" id="displayName">Не определено</div>
-          <div class="sub" id="displaySub">—</div>
+      <div id="scanArea" aria-label="Область камеры для сканирования">
+        <video id="video" playsinline muted></video>
+        <canvas id="canvas"></canvas>
+        <div id="scannerLine" class="scanner-line" style="display:none"></div>
+        <div id="placeholder" style="position:absolute;color:#fff;text-shadow:0 2px 6px rgba(0,0,0,0.6);text-align:center;padding:12px">
+          <div style="font-size:18px;font-weight:700">Камера не включена</div>
+          <div class="small">Нажмите «Начать сканирование»</div>
         </div>
       </div>
 
-      <div><strong>ID:</strong> <span id="userId">—</span></div>
-      <div class="controls" style="margin-top:12px">
-        <button id="copyBtn">Копировать ID</button>
-        <button id="sendBtn" class="primary">Отправить ID боту</button>
-        <button id="closeBtn">Закрыть WebApp</button>
+      <div class="controls">
+        <button id="toggleScanBtn" type="button">Начать сканирование</button>
+        <button id="stopBtn" class="btn-ghost" type="button" style="display:none">Остановить</button>
+
+        <!-- Файл-загрузка (fallback для десктопа/изображений) -->
+        <label for="fileInput" class="file-label" title="Загрузить картинку с QR">Загрузить изображение</label>
+        <input id="fileInput" type="file" accept="image/*" />
       </div>
 
-      <div class="hint" id="hint">Ожидание данных...</div>
+      <div id="resultArea" aria-live="polite">
+        <p id="scanResult"></p>
+        <div class="row" style="margin-top:8px">
+          <button id="copyBtn" type="button">Копировать результат</button>
+          <button id="openBtn" class="btn-ghost" type="button">Открыть в новой вкладке</button>
+          <button id="sendToTelegramBtn" class="btn-ghost" type="button">Отправить в Telegram</button>
+        </div>
+        <div class="hint">Если ссылка — нажмите «Открыть в новой вкладке»</div>
+      </div>
+
+      <p class="hint" style="margin-top:14px">Если Web App Telegram доступен — будет использовано popup. Для отправки на сервер замените fetch URL в коде.</p>
     </div>
   </div>
 
   <script>
-    // Ваш изначальный помощник — функция получения user id
-    async function getUserID() {
-        const tg = window.Telegram?.WebApp;
-        if (tg?.initDataUnsafe?.user?.id) {
-            console.log("User data from Telegram:", JSON.stringify(tg.initDataUnsafe.user));
-            return tg.initDataUnsafe.user.id;
-        }
+    // Основные переменные
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const toggleBtn = document.getElementById('toggleScanBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const scannerLine = document.getElementById('scannerLine');
+    const placeholder = document.getElementById('placeholder');
+    const resultArea = document.getElementById('resultArea');
+    const scanResultEl = document.getElementById('scanResult');
+    const copyBtn = document.getElementById('copyBtn');
+    const openBtn = document.getElementById('openBtn');
+    const sendToTelegramBtn = document.getElementById('sendToTelegramBtn');
+    const fileInput = document.getElementById('fileInput');
 
-        const urlParams = new URLSearchParams(window.location.search);
-        const userID = urlParams.get('user_id');
-        if (userID) {
-            console.log("User ID from URL:", userID);
-            return userID;
-        }
+    let scanning = false;
+    let videoStream = null;
+    let animationId = null;
+    let lastResult = '';
 
-        throw new Error("User ID not available");
+    // Telegram WebApp object (если доступен)
+    const tg = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
+
+    function showPlaceholder(show){
+      placeholder.style.display = show ? 'block' : 'none';
     }
 
-    // Вспомогательная функция, чтобы получить всю user информацию (если есть)
-    function getUserInfo() {
-      const tg = window.Telegram?.WebApp;
-      return tg?.initDataUnsafe?.user ?? null;
+    function showScannerLine(show){
+      scannerLine.style.display = show ? 'block' : 'none';
     }
 
-    // Инициализация UI
-    (async function init() {
-      const hintEl = document.getElementById('hint');
-      const idEl = document.getElementById('userId');
-      const nameEl = document.getElementById('displayName');
-      const subEl = document.getElementById('displaySub');
-      const avatarEl = document.getElementById('avatar');
-
-      // Нажатия на кнопки
-      document.getElementById('copyBtn').addEventListener('click', async () => {
-        const id = idEl.textContent;
-        if (!id || id === '—') {
-          alert('ID отсутствует для копирования');
-          return;
-        }
-        try {
-          await navigator.clipboard.writeText(id);
-          hintEl.textContent = 'ID скопирован в буфер обмена';
-        } catch (e) {
-          // fallback
-          const ta = document.createElement('textarea');
-          ta.value = id;
-          document.body.appendChild(ta);
-          ta.select();
-          document.execCommand('copy');
-          ta.remove();
-          hintEl.textContent = 'ID скопирован (fallback)';
-        }
-      });
-
-      document.getElementById('sendBtn').addEventListener('click', () => {
-        const tg = window.Telegram?.WebApp;
-        if (!tg) {
-          alert('Методы Telegram WebApp недоступны в этом окружении.');
-          return;
-        }
-        const id = idEl.textContent;
-        if (!id || id === '—') {
-          alert('ID отсутствует, нечего отправлять');
-          return;
-        }
-        // Отправляем произвольную полезную нагрузку боту (бот получит через update)
-        try {
-          tg.sendData(JSON.stringify({ type: 'user_id', user_id: id, ts: Date.now() }));
-          hintEl.textContent = 'Данные отправлены боту через tg.sendData()';
-        } catch (err) {
-          console.error(err);
-          hintEl.textContent = 'Ошибка при отправке данных: ' + (err.message || err);
-        }
-      });
-
-      document.getElementById('closeBtn').addEventListener('click', () => {
-        const tg = window.Telegram?.WebApp;
-        if (tg?.close) tg.close();
-        else window.close?.();
-      });
-
-      // Попробуем показать информацию о пользователе
+    async function startScanning(){
+      if (scanning) return;
       try {
-        const user = getUserInfo();
-        if (user) {
-          const id = String(user.id);
-          idEl.textContent = id;
-          nameEl.textContent = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username || 'Пользователь';
-          subEl.textContent = user.username ? '@' + user.username : '—';
-          // аватар: если есть поле photo_url — используем его, иначе первая буква
-          if (user.photo_url) {
-            const img = document.createElement('img');
-            img.src = user.photo_url;
-            img.alt = nameEl.textContent;
-            img.width = 64; img.height = 64;
-            img.style.borderRadius = '12px';
-            avatarEl.innerHTML = '';
-            avatarEl.appendChild(img);
-          } else {
-            avatarEl.textContent = (user.first_name ? user.first_name[0] : 'U').toUpperCase();
-          }
-          hintEl.textContent = 'Данные получены из Telegram: initDataUnsafe.user';
-          console.log('initDataUnsafe.user =', user);
-          return;
-        }
-
-        // Если нет initDataUnsafe, пробуем получить только ID через getUserID()
-        const idFromFn = await getUserID();
-        idEl.textContent = idFromFn;
-        nameEl.textContent = 'ID из URL/инициализации';
-        subEl.textContent = '—';
-        avatarEl.textContent = idFromFn.slice(-2);
-        hintEl.textContent = 'ID получен, полные данные пользователя недоступны.';
+        // Запрашиваем камеру (по возможности - заднюю)
+        videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+        video.srcObject = videoStream;
+        video.setAttribute('playsinline', true);
+        await video.play();
+        showPlaceholder(false);
+        showScannerLine(true);
+        toggleBtn.textContent = 'Остановить сканирование';
+        stopBtn.style.display = 'inline-block';
+        scanning = true;
+        tick(); // запускаем цикл
       } catch (err) {
-        console.warn('User not available:', err);
-        idEl.textContent = '—';
-        nameEl.textContent = 'Вне Telegram';
-        subEl.textContent = 'Запустите в Telegram WebApp или добавьте ?user_id=... в URL';
-        hintEl.innerHTML = '<span class="error">Пользовательские данные не найдены:</span> ' + (err.message || err);
+        console.error('Ошибка доступа к камере:', err);
+        alert('Не удалось получить доступ к камере: ' + (err && err.message ? err.message : err));
       }
-    })();
+    }
+
+    function stopScanning(){
+      if (!scanning && !videoStream) return;
+      if (videoStream) {
+        const tracks = videoStream.getTracks();
+        tracks.forEach(t => t.stop());
+        video.srcObject = null;
+        videoStream = null;
+      }
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+        animationId = null;
+      }
+      scanning = false;
+      toggleBtn.textContent = 'Начать сканирование';
+      stopBtn.style.display = 'none';
+      showScannerLine(false);
+      showPlaceholder(true);
+    }
+
+    toggleBtn.addEventListener('click', () => {
+      if (scanning) stopScanning(); else startScanning();
+    });
+    stopBtn.addEventListener('click', stopScanning);
+
+    function tick(){
+      animationId = requestAnimationFrame(tick);
+
+      if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
+
+      // Подгоняем размер canvas под размер видео
+      if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight){
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+      }
+
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
+
+      if (code && code.data) {
+        // Если найден новый результат — показываем
+        if (code.data !== lastResult) {
+          lastResult = code.data;
+          onScanSuccess(code.data);
+        }
+      }
+    }
+
+    function onScanSuccess(text){
+      // Показываем результат
+      scanResultEl.textContent = text;
+      resultArea.style.display = 'block';
+      // Останавливаем поток (чтобы не тратить камеру)
+      stopScanning();
+      // Подсветка/корнеры можно добавить здесь (рисование квадрата вокруг QR)
+      // Если нужно — можно автоматически открывать ссылку: window.open(text, '_blank')
+    }
+
+    // Копирование результата
+    copyBtn.addEventListener('click', async () => {
+      const text = lastResult || scanResultEl.textContent;
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        showPopup('Скопировано в буфер обмена');
+      } catch (err) {
+        console.error('copy error', err);
+        alert('Не удалось скопировать текст');
+      }
+    });
+
+    // Открыть в новой вкладке (если это URL)
+    openBtn.addEventListener('click', () => {
+      const text = lastResult || scanResultEl.textContent;
+      if (!text) return;
+      // Простая проверка на URL
+      try {
+        const url = new URL(text);
+        window.open(url.href, '_blank');
+      } catch (e){
+        // не URL — просто показать сообщение
+        alert('Результат не является корректным URL:\n' + text);
+      }
+    });
+
+    // Отправка в Telegram (через WebApp popup или на сервер)
+    sendToTelegramBtn.addEventListener('click', async () => {
+      const text = lastResult || scanResultEl.textContent;
+      if (!text) return;
+      // Если есть Telegram WebApp — покажем popup и (если нужно) вызовем сервер
+      if (tg) {
+        try {
+          // Попытка показать popup через WebApp API
+          tg.showPopup({ title: 'Отправка', message: 'Отправляю данные в Telegram...', buttons: [{type:'close'}] });
+        } catch (e) {
+          console.warn('tg.showPopup failed', e);
+        }
+      }
+
+      // По умолчанию — отправим POST на /api/send-scaner-info/ (как в вашем примере).
+      // При необходимости поменяйте URL или payload.
+      try {
+        const userId = (tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.id) ? tg.initDataUnsafe.user.id : null;
+        const res = await fetch('/api/send-scaner-info/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: userId, result_scan: text })
+        });
+        if (res.ok){
+          const json = await res.json().catch(()=>({message:'Отправлено'}));
+          showPopup(json.message || 'Данные отправлены');
+        } else {
+          showPopup('Сервер вернул ошибку при отправке');
+        }
+      } catch (err){
+        console.error('send error', err);
+        showPopup('Не удалось отправить данные на сервер');
+      }
+    });
+
+    // Функция показа popup — использует WebApp если есть, иначе alert
+    function showPopup(message){
+      if (tg && tg.showPopup) {
+        tg.showPopup({ title: 'Информация', message, buttons: [{type:'close'}] });
+      } else {
+        alert(message);
+      }
+    }
+
+    // Загрузка изображения (fallback)
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const img = new Image();
+      const reader = new FileReader();
+      reader.onload = () => {
+        img.onload = () => {
+          // ресайз canvas под изображение
+          canvas.width = img.naturalWidth;
+          canvas.height = img.naturalHeight;
+          ctx.drawImage(img, 0, 0);
+          const imageData = ctx.getImageData(0,0,canvas.width,canvas.height);
+          const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
+          if (code && code.data) {
+            lastResult = code.data;
+            onScanSuccess(code.data);
+          } else {
+            alert('QR-код не найден на изображении.');
+          }
+        };
+        img.onerror = () => alert('Не удалось загрузить изображение');
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+      // очистим input чтобы можно было загрузить тот же файл повторно
+      fileInput.value = '';
+    });
+
+    // Инициализация: прячем выдачу
+    document.addEventListener('DOMContentLoaded', () => {
+      resultArea.style.display = 'none';
+      showPlaceholder(true);
+      // Если нужно: автоматически запускать Telegram WebApp ready
+      if (tg && tg.ready) {
+        try { tg.ready(); } catch(e){ /* ignore */ }
+      }
+    });
+
+    // Очистка при уходе со страницы
+    window.addEventListener('pagehide', stopScanning);
+    window.addEventListener('beforeunload', stopScanning);
   </script>
 </body>
 </html>
