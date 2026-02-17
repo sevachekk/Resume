@@ -8,58 +8,91 @@
     body { font-family: system-ui, -apple-system, Roboto, "Helvetica Neue", Arial; margin: 12px; }
     #reader { width: 100%; max-width: 480px; margin: 0 auto; }
     #output { white-space: pre-wrap; margin-top: 12px; word-break: break-word; }
+    .notice { padding: 8px 10px; border-radius: 8px; margin-bottom: 10px; background: #fffbdd; }
     button { margin-top: 10px; padding: 8px 12px; border-radius: 8px; }
   </style>
-  <!-- html5-qrcode (CDN) -->
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 </head>
 <body>
   <h3>Сканер QR</h3>
+  <div id="status" class="notice" style="display:none;"></div>
+
   <div id="reader"></div>
   <div id="output">Ожидание сканирования...</div>
-  <button id="stopBtn">Остановить сканер</button>
+
+  <div style="margin-top:12px;">
+    <button id="stopBtn">Остановить сканер</button>
+    <button id="testSendBtn" style="margin-left:8px; display:none;">(ТЕСТ) Отправить тестовые данные в бот</button>
+  </div>
 
 <script>
-  // Telegram WebApp object (будет доступен только когда откроют внутри Telegram)
-  const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
-
-  if (tg && tg.ready) tg.ready();
-
+  const statusEl = document.getElementById('status');
   const output = document.getElementById('output');
   const stopBtn = document.getElementById('stopBtn');
+  const testSendBtn = document.getElementById('testSendBtn');
 
-  // Удобный обработчик успешного сканирования
-  function onScanSuccess(decodedText, decodedResult) {
-    output.textContent = "Считано: " + decodedText;
-    // Отправляем данные боту (через Telegram Web App API)
+  // Проверка наличия Telegram.WebApp
+  const isInTelegram = !!(window.Telegram && window.Telegram.WebApp);
+  let tg = null;
+
+  if (isInTelegram) {
+    tg = window.Telegram.WebApp;
+    try { tg.ready(); } catch(e){ console.warn("tg.ready() failed:", e); }
+    statusEl.style.display = 'none';
+    testSendBtn.style.display = 'none';
+  } else {
+    // Покажем заметку пользователю
+    statusEl.style.display = 'block';
+    statusEl.innerHTML = '<strong>Внимание:</strong> вы открыли страницу вне Telegram. ' +
+      'Чтобы WebApp API был доступен, откройте этот mini-app через кнопку Web App внутри клиента Telegram (в чате с ботом). ' +
+      'Внешний браузер не позволяет отправлять данные боту.';
+    // Покажем кнопку для локальной отладки
+    testSendBtn.style.display = 'inline-block';
+    // Мок для локальной разработки (для того, чтобы UI можно было тестировать)
+    window.Telegram = window.Telegram || {};
+    window.Telegram.WebApp = {
+      initData: null,
+      isMock: true,
+      sendData: function(data) {
+        // Мок: покажем alert и в консоль
+        console.log("MOCK sendData:", data);
+        alert("MOCK: данные, которые были бы отправлены боту:\n\n" + data);
+      },
+      ready: function(){ /* noop */ }
+    };
+    tg = window.Telegram.WebApp;
+  }
+
+  // Функция отправки данных в Telegram WebApp API
+  function sendToBot(payload) {
     if (tg && typeof tg.sendData === 'function') {
       try {
-        // можно отправлять любую строку; если данные — объект, JSON.stringify
-        tg.sendData(decodedText);
-        output.textContent += "\n\nДанные отправлены боту через Telegram.WebApp.sendData().";
+        tg.sendData(payload);
+        output.textContent = "Считано: " + payload + "\n\nДанные отправлены (или смоделированы) через Telegram.WebApp.sendData().";
       } catch (err) {
         console.error("sendData failed:", err);
-        output.textContent += "\n\nОшибка отправки данных боту: " + err;
+        output.textContent = "Ошибка при отправке данных: " + err;
       }
     } else {
-      output.textContent += "\n\nTelegram.WebApp недоступен (браузерная проверка).";
+      output.textContent = "Telegram.WebApp.sendData недоступен.";
     }
+  }
+
+  // Обработчики для html5-qrcode
+  function onScanSuccess(decodedText, decodedResult) {
+    // Можно отправлять JSON, если нужно
+    sendToBot(decodedText);
     // остановим сканер (опционально)
-    try {
-      html5QrcodeScanner.clear();
-    } catch(e) { console.warn(e); }
+    try { html5QrcodeScanner.clear(); } catch(e){ console.warn(e); }
   }
-
   function onScanFailure(error) {
-    // ничего критичного, можно логировать
-    // console.warn(`scan failed: ${error}`);
+    // не критично — можно логировать
   }
 
-  // Настройка Html5QrcodeScanner
   const html5QrcodeScanner = new Html5QrcodeScanner(
     "reader",
     { fps: 10, qrbox: { width: 250, height: 250 } },
-    /* verbose= */ false
+    false
   );
   html5QrcodeScanner.render(onScanSuccess, onScanFailure);
 
@@ -73,10 +106,11 @@
       });
   });
 
-  // На всякий случай: если открыто не в Telegram — покажем инструкцию
-  if (!tg) {
-    output.textContent = "Откройте это в клиенте Telegram (кнопка Web App в боте). Также можно протестировать локально — при сканировании данные не попадут боту (т.к. window.Telegram.WebApp отсутствует).";
-  }
+  // Кнопка для локального теста: симуляция отправки
+  testSendBtn.addEventListener('click', () => {
+    const fake = prompt("Введите тестовую строку, которая будет отправлена боту (локальная симуляция):", "TEST_QR_12345");
+    if (fake !== null) sendToBot(fake);
+  });
 </script>
 </body>
 </html>
