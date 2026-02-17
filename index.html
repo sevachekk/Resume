@@ -2,364 +2,149 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <title>QR Сканер — Мини-приложение</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>QR WebApp — POST to server</title>
   <style>
-    :root{--bg:#071021;--card:#0f1724;--accent:#11a37f;--muted:#9aa4b2;--white:#eef2f7}
-    html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,Arial;background:linear-gradient(180deg,#071021,#071827);color:var(--white)}
-    .app{max-width:480px;margin:0 auto;padding:16px}
-    header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
-    header h1{font-size:18px;margin:0} header p{margin:0;font-size:12px;color:var(--muted)}
-    .viewer{position:relative;width:100%;height:60vh;min-height:380px;background:#000;border-radius:12px;overflow:hidden}
-    video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
-    canvas{display:none}
-    .overlay{position:absolute;inset:0;pointer-events:none;display:flex;align-items:center;justify-content:center}
-    .frame{width:78%;aspect-ratio:1/1;border-radius:10px;box-shadow:0 0 0 9999px rgba(0,0,0,0.35) inset;border:2px dashed rgba(255,255,255,0.12);display:flex;align-items:center;justify-content:center}
-    .hint{position:absolute;bottom:12px;left:12px;right:12px;text-align:center;font-size:13px;color:var(--muted);pointer-events:auto}
-    .controls{margin-top:12px;display:flex;gap:8px;justify-content:space-between;align-items:center}
-    .btn{background:var(--card);border:1px solid rgba(255,255,255,0.04);color:var(--white);padding:10px 12px;border-radius:10px;font-size:15px;flex:1;text-align:center}
-    .btn.primary{background:linear-gradient(90deg,var(--accent),#0bc09b);color:#021016;font-weight:600;flex:2}
-    .small{font-size:13px;padding:8px 10px}
-    .result{margin-top:12px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:10px;padding:10px;font-size:14px;color:var(--white);word-break:break-all}
-    .muted{color:var(--muted);font-size:13px}
-    .row{display:flex;gap:8px;margin-top:8px}
-    input[type=file]{display:none}
-    footer{margin-top:14px;text-align:center;color:var(--muted);font-size:12px}
-    .status {margin-top:10px;font-size:13px;color:var(--muted)}
-    .debug {margin-top:12px;padding:8px;background:#071827;border-radius:8px;font-size:12px;white-space:pre-wrap;max-height:180px;overflow:auto}
-    .confirm {position:fixed;left:0;right:0;bottom:12px;margin:0 auto;max-width:440px;padding:12px;background:linear-gradient(180deg,#042526,#063f33);border-radius:10px;display:flex;gap:8px;align-items:center;box-shadow:0 8px 30px rgba(0,0,0,0.6)}
+    body{font-family:system-ui,Arial;padding:16px;background:#071827;color:#eef2f7}
+    .box{max-width:720px;margin:0 auto}
+    button{padding:10px 12px;border-radius:8px;border:none;background:#2c8f68;color:white}
+    .hint{color:#9aa4b2;margin-top:8px}
+    pre{background:#0b1220;padding:12px;border-radius:8px;white-space:pre-wrap}
   </style>
 </head>
 <body>
-  <div class="app">
-    <header>
-      <div>
-        <h1>QR Сканер</h1>
-        <p>Откройте камеру и наведите QR в рамку</p>
-      </div>
-      <div class="muted">Мини-приложение</div>
-    </header>
+<div class="box">
+  <h1>QR Scanner — POST test</h1>
+  <p class="hint">Откройте эту страницу из кнопки бота в мобильном Telegram. После сканирования страница отправит POST на ваш сервер.</p>
 
-    <main>
-      <div class="viewer" id="viewer">
-        <video id="video" autoplay playsinline></video>
-        <canvas id="canvas"></canvas>
-        <div class="overlay" aria-hidden="true">
-          <div class="frame" id="frame"></div>
-        </div>
-      </div>
+  <video id="video" autoplay playsinline style="width:100%;max-height:60vh;background:#000"></video>
+  <canvas id="canvas" style="display:none"></canvas>
 
-      <div class="hint muted" id="hint">Используйте заднюю камеру. Если WebApp недоступен — откройте приложение Telegram через кнопку бота.</div>
-
-      <div class="controls">
-        <button class="btn small" id="toggleTorch">Вкл/Выкл фонарик</button>
-        <button class="btn small" id="switchCam">Сменить камеру</button>
-        <button class="btn primary" id="stopStart">Остановить</button>
-      </div>
-
-      <div class="row">
-        <label class="btn small" for="pickImage">Загрузить фото</label>
-        <input id="pickImage" type="file" accept="image/*">
-        <button class="btn small" id="copyBtn">Копировать</button>
-        <button class="btn small" id="sendBtn">Отправить в Telegram</button>
-      </div>
-
-      <div class="result" id="result">Результат: <span id="resultText" class="muted">пока не найдено</span></div>
-
-      <div class="status" id="status">Статус: ждём Telegram WebApp...</div>
-
-      <div class="debug" id="debug" style="display:none"></div>
-
-      <footer>Если камера не работает — разрешите доступ к камере в настройках браузера / Telegram.</footer>
-    </main>
+  <div style="margin-top:8px">
+    <button id="start">Запустить камеру</button>
+    <button id="stop">Остановить</button>
   </div>
 
-  <!-- jsQR CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+  <div style="margin-top:8px">
+    <button id="fakeSend">Тестовый POST (без QR)</button>
+  </div>
 
-  <script>
-    // Helper: ждём появления Telegram.WebApp (promise, таймаут)
-    function waitForTelegram(timeout = 3000) {
-      return new Promise(resolve => {
-        const start = Date.now();
-        (function check() {
-          if (window.Telegram?.WebApp) return resolve(window.Telegram.WebApp);
-          if (Date.now() - start > timeout) return resolve(null);
-          setTimeout(check, 100);
-        })();
-      });
-    }
+  <div class="hint">Публичный endpoint, на который будет отправлен POST (замените перед деплоем):</div>
+  <pre id="endpoint">https://YOUR_PUBLIC_ENDPOINT/receive</pre>
 
-    // UI элементы
-    const statusEl = document.getElementById('status');
-    const debugEl = document.getElementById('debug');
-    const video = document.getElementById('video');
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-    const resultTextEl = document.getElementById('resultText');
-    const sendBtn = document.getElementById('sendBtn');
-    const copyBtn = document.getElementById('copyBtn');
-    const stopStartBtn = document.getElementById('stopStart');
-    const toggleTorchBtn = document.getElementById('toggleTorch');
-    const switchCamBtn = document.getElementById('switchCam');
-    const pickImage = document.getElementById('pickImage');
+  <div style="margin-top:12px">
+    <div>Результат: <span id="result">—</span></div>
+    <pre id="debug" style="display:none"></pre>
+  </div>
+</div>
 
-    let tg = null;
-    let scanning = true;
-    let currentStream = null;
-    let useFront = false;
-    let torchOn = false;
-    let lastResult = "";
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+<script>
+(async function () {
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const startBtn = document.getElementById('start');
+  const stopBtn = document.getElementById('stop');
+  const fakeBtn = document.getElementById('fakeSend');
+  const resultEl = document.getElementById('result');
+  const debugEl = document.getElementById('debug');
 
-    async function init() {
-      tg = await waitForTelegram(3500);
-      if (!tg) {
-        statusEl.textContent = 'Статус: Telegram WebApp API недоступен. Откройте страницу именно из кнопки бота в мобильном приложении Telegram.';
-        statusEl.style.color = 'orange';
-        debugEl.style.display = 'block';
-        debugEl.textContent = 'Debug:\n' + JSON.stringify({
-          userAgent: navigator.userAgent,
-          location: location.href,
-          referrer: document.referrer,
-          hasTelegramObject: !!window.Telegram,
-          hasTelegramWebApp: !!window.Telegram?.WebApp
-        }, null, 2);
-        // Запускаем камеру даже если tg отсутствует — чтобы можно было тестить, но sendBtn покажет предупреждение
-        startCamera().catch(()=>{});
-        return;
-      }
+  const ENDPOINT = "https://YOUR_PUBLIC_ENDPOINT/receive"; // <<< ЗАМЕНИТЕ НА ВАШ ngrok URL
+  document.getElementById('endpoint').textContent = ENDPOINT;
 
-      try { tg.ready(); } catch(e){}
-      statusEl.textContent = 'Статус: Telegram WebApp доступен ✓';
-      statusEl.style.color = 'lightgreen';
-      debugEl.style.display = 'block';
-      debugEl.textContent = 'Telegram.WebApp properties:\n' + JSON.stringify({
-        version: tg.version ?? '(unknown)',
-        initData: !!tg.initData,
-        initDataUnsafe: !!tg.initDataUnsafe
-      }, null, 2);
+  let stream = null;
+  let scanning = false;
+  let lastQr = "";
 
-      // старт камеры
-      await startCamera();
-    }
-
-    // Camera functions
-    async function startCamera() {
-      stopCamera();
-      const constraints = {
-        audio: false,
-        video: {
-          facingMode: useFront ? "user" : { ideal: "environment" },
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        }
-      };
-      try {
-        currentStream = await navigator.mediaDevices.getUserMedia(constraints);
-        video.srcObject = currentStream;
-        video.addEventListener('loadedmetadata', () => {
-          if (!useFront) video.style.transform = "scaleX(1)"; else video.style.transform = "scaleX(-1)";
-        });
-        await video.play();
-        scanning = true;
-        stopStartBtn.textContent = "Остановить";
-        requestAnimationFrame(tick);
-      } catch (err) {
-        console.error("Ошибка доступа к камере:", err);
-        alert("Не удалось получить доступ к камере: " + (err.message || err));
-      }
-    }
-
-    function stopCamera() {
-      scanning = false;
-      if (currentStream) {
-        currentStream.getTracks().forEach(t => t.stop());
-        currentStream = null;
-      }
-      stopStartBtn.textContent = "Запустить";
-    }
-
-    async function toggleTorch() {
-      if (!currentStream) return;
-      const track = currentStream.getVideoTracks()[0];
-      if (!track) return;
-      const cap = track.getCapabilities?.();
-      if (!cap || !cap.torch) {
-        alert("Фонарик не поддерживается на этом устройстве/браузере.");
-        return;
-      }
-      try {
-        torchOn = !torchOn;
-        await track.applyConstraints({ advanced: [{ torch: torchOn }] });
-        toggleTorchBtn.textContent = torchOn ? "Фонарик: Вкл" : "Фонарик: Выкл";
-      } catch (e) {
-        console.error("toggleTorch error:", e);
-        alert("Не удалось переключить фонарик: " + e.message);
-      }
-    }
-
-    function tick() {
-      if (!scanning || video.readyState !== video.HAVE_ENOUGH_DATA) {
-        requestAnimationFrame(tick);
-        return;
-      }
-      const vw = video.videoWidth;
-      const vh = video.videoHeight;
-      if (!vw || !vh) { requestAnimationFrame(tick); return; }
-      canvas.width = vw; canvas.height = vh;
-      ctx.drawImage(video, 0, 0, vw, vh);
-
-      const side = Math.min(vw, vh);
-      const sx = (vw - side) / 2;
-      const sy = (vh - side) / 2;
-      let imageData;
-      try {
-        imageData = ctx.getImageData(sx, sy, side, side);
-      } catch(e){
-        requestAnimationFrame(tick);
-        return;
-      }
-
-      const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "attemptBoth" });
-      if (code) {
-        drawBoundingBox(code.location, sx, sy, vw, vh);
-        if (code.data && code.data !== lastResult) {
-          lastResult = code.data;
-          onQrFound(code.data);
-        }
-      }
+  async function startCamera() {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+      video.srcObject = stream;
+      await video.play();
+      scanning = true;
       requestAnimationFrame(tick);
+    } catch (e) {
+      alert("Не удалось получить доступ к камере: " + e.message);
+    }
+  }
+
+  function stopCamera() {
+    scanning = false;
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop());
+      stream = null;
+    }
+  }
+
+  function tick() {
+    if (!scanning) return;
+    if (video.readyState !== video.HAVE_ENOUGH_DATA) {
+      requestAnimationFrame(tick);
+      return;
+    }
+    const w = video.videoWidth, h = video.videoHeight;
+    canvas.width = w; canvas.height = h;
+    ctx.drawImage(video, 0, 0, w, h);
+
+    // crop center square
+    const side = Math.min(w, h);
+    const sx = Math.floor((w - side) / 2);
+    const sy = Math.floor((h - side) / 2);
+    const imageData = ctx.getImageData(sx, sy, side, side);
+    const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "attemptBoth" });
+
+    if (code && code.data && code.data !== lastQr) {
+      lastQr = code.data;
+      resultEl.textContent = code.data;
+      // отправляем POST на сервер
+      sendPost(code.data);
     }
 
-    function drawBoundingBox(loc, sx, sy, vw, vh) {
-      ctx.strokeStyle = "rgba(17,163,127,0.9)";
-      ctx.lineWidth = Math.max(2, Math.min(vw, vh) * 0.005);
-      ctx.beginPath();
-      ctx.moveTo(sx + loc.topLeftCorner.x, sy + loc.topLeftCorner.y);
-      ctx.lineTo(sx + loc.topRightCorner.x, sy + loc.topRightCorner.y);
-      ctx.lineTo(sx + loc.bottomRightCorner.x, sy + loc.bottomRightCorner.y);
-      ctx.lineTo(sx + loc.bottomLeftCorner.x, sy + loc.bottomLeftCorner.y);
-      ctx.closePath();
-      ctx.stroke();
-    }
+    requestAnimationFrame(tick);
+  }
 
-    // Когда QR найден — показываем результат и предлагаем отправить
-    function onQrFound(text) {
-      resultTextEl.textContent = text;
-      resultTextEl.classList.remove('muted');
-      // Авто-отправка отключена: пользователь должен подтвердить
-      // Можно показать небольшое уведомление / подтвердить отправку
-      showConfirmSend(text);
-    }
+  async function sendPost(qrText) {
+    // Telegram.WebApp.initData — строка, берем её для валидации на сервере
+    const tg = window.Telegram?.WebApp;
+    const initData = tg?.initData ?? null;
 
-    // Подтверждение отправки (внизу)
-    function showConfirmSend(text) {
-      // если уже есть — не показываем дубликат
-      if (document.getElementById('confirmBox')) return;
-      const box = document.createElement('div');
-      box.id = 'confirmBox';
-      box.className = 'confirm';
-      box.innerHTML = `
-        <div style="flex:1">
-          <div style="font-size:13px;color:#dff5ea">QR найден</div>
-          <div style="font-size:12px;color:#bfead1;word-break:break-all">${text}</div>
-        </div>
-        <div style="display:flex;gap:8px">
-          <button id="confirmSendBtn" class="btn small">Отправить</button>
-          <button id="dismissBtn" class="btn small">Закрыть</button>
-        </div>
-      `;
-      document.body.appendChild(box);
-      document.getElementById('confirmSendBtn').addEventListener('click', () => {
-        sendDataToBot(text);
-        removeConfirm();
+    const payload = { qr: qrText, initData: initData };
+
+    try {
+      const resp = await fetch(ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
-      document.getElementById('dismissBtn').addEventListener('click', () => {
-        removeConfirm();
-      });
-    }
-
-    function removeConfirm() {
-      const el = document.getElementById('confirmBox');
-      if (el) el.remove();
-    }
-
-    // Отправка в бот через Telegram WebApp API (tg.sendData)
-    function sendDataToBot(text) {
-      if (!tg) {
-        alert("Telegram WebApp API недоступен. Откройте страницу из бота в мобильном Telegram.");
-        return;
+      const j = await resp.json();
+      debugEl.style.display = 'block';
+      debugEl.textContent = JSON.stringify({ status: resp.status, body: j }, null, 2);
+      if (resp.ok) {
+        console.log("POST ok", j);
+      } else {
+        console.warn("POST failed", j);
       }
-      try {
-        tg.sendData(JSON.stringify({ qr: text }));
-        // опционально закрываем WebApp:
-        // try { tg.close(); } catch(e){}
-      } catch (e) {
-        console.error("sendData error", e);
-        alert("Не удалось отправить данные в Telegram: " + e.message);
-      }
+    } catch (e) {
+      console.error("sendPost error", e);
+      debugEl.style.display = 'block';
+      debugEl.textContent = "send error: " + e.message;
     }
+  }
 
-    // UI handlers
-    sendBtn.addEventListener('click', () => {
-      const txt = lastResult || resultTextEl.textContent || "";
-      if (!txt || txt === 'пока не найдено') return alert("QR ещё не распознан.");
-      // Если tg отсутствует — покажем понятное сообщение
-      if (!tg) return alert("Telegram WebApp API недоступен. Откройте страницу из бота в мобильном Telegram.");
-      // просим подтвердить
-      showConfirmSend(txt);
-    });
+  // Тестовая кнопка для отправки без QR
+  fakeBtn.addEventListener('click', async () => {
+    const tg = window.Telegram?.WebApp;
+    const initData = tg?.initData ?? null;
+    await sendPost("TEST_QR_123456", initData);
+  });
 
-    copyBtn.addEventListener('click', async () => {
-      const txt = lastResult || resultTextEl.textContent || "";
-      if (!txt || txt === 'пока не найдено') return alert("QR ещё не распознан.");
-      try {
-        await navigator.clipboard.writeText(txt);
-        copyBtn.textContent = "Скопировано";
-        setTimeout(()=>copyBtn.textContent = "Копировать", 1200);
-      } catch (e) {
-        alert("Не удалось скопировать: " + e.message);
-      }
-    });
+  startBtn.addEventListener('click', startCamera);
+  stopBtn.addEventListener('click', stopCamera);
 
-    stopStartBtn.addEventListener('click', () => {
-      if (scanning) stopCamera(); else startCamera();
-    });
-
-    toggleTorchBtn.addEventListener('click', () => toggleTorch());
-    switchCamBtn.addEventListener('click', async () => { useFront = !useFront; await startCamera(); });
-
-    pickImage.addEventListener('change', async (ev) => {
-      const f = ev.target.files && ev.target.files[0];
-      if (!f) return;
-      const img = new Image();
-      img.onload = () => {
-        const w = img.width, h = img.height;
-        canvas.width = w; canvas.height = h;
-        ctx.drawImage(img, 0, 0, w, h);
-        const data = ctx.getImageData(0,0,w,h);
-        const code = jsQR(data.data, data.width, data.height, { inversionAttempts: "attemptBoth" });
-        if (code && code.data) {
-          lastResult = code.data;
-          onQrFound(code.data);
-          alert("QR найден: " + code.data);
-        } else {
-          alert("QR не найден на изображении.");
-        }
-      };
-      img.onerror = () => alert("Не удалось загрузить изображение.");
-      img.src = URL.createObjectURL(f);
-      pickImage.value = "";
-    });
-
-    // init on load
-    (async () => {
-      await init();
-    })();
-
-    // cleanup
-    window.addEventListener('pagehide', stopCamera);
-    window.addEventListener('beforeunload', stopCamera);
-  </script>
+  // автозапуск камеры при загрузке — можно отключить
+  // await startCamera();
+})();
+</script>
 </body>
 </html>
