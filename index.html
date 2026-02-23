@@ -1,310 +1,259 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Сканер QR-кодов</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Scan QR • СПБ</title>
+    <!-- <link rel="stylesheet" href="/static/style/style.css"> -->
+    <!-- Telegram WebApp script (официальный) -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- jsQR оставляем только для fallback -->
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script>
+        // --- UI / инициализация Telegram WebApp ---
+        const tg = window.Telegram?.WebApp || null;
 
-  <!-- jsQR: декодер QR из canvas -->
-  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+        // Покажем страницу и развернём (как было у вас)
+        if (tg) {
+            try { tg.ready(); } catch(e) {}
+            try { if (tg.expand) tg.expand(); } catch(e) {}
+        }
 
-  <style>
-    :root{
-      --bg:#f9f9fb;
-      --card:#ffffff;
-      --accent:#0077cc;
-      --muted:#7f8c8d;
-      --shadow: rgba(0,0,0,0.08);
-    }
-    html,body{height:100%;margin:0;font-family:Inter,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:#222}
-    .wrap{max-width:920px;margin:24px auto;padding:20px;box-sizing:border-box}
-    .card{background:var(--card);border-radius:12px;padding:18px;box-shadow:0 8px 30px var(--shadow)}
-    h1{margin:0 0 12px;font-size:20px;text-align:center}
-    #scanArea{position:relative;border-radius:10px;overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center;height:360px}
-    video{width:100%;height:100%;object-fit:cover;display:block}
-    canvas{display:none}
-    .scanner-line{position:absolute;left:0;height:4px;width:100%;background:linear-gradient(90deg, rgba(0,255,0,0.0), rgba(0,255,0,0.9), rgba(0,255,0,0.0));animation:scanY 2000ms linear infinite;mix-blend-mode:screen;pointer-events:none}
-    @keyframes scanY{0%{top:0%}100%{top:100%}}
-    .controls{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
-    button, .file-btn {
-      appearance:none;border:0;padding:12px 14px;border-radius:10px;font-weight:600;cursor:pointer;
-      background:var(--accent);color:#fff;box-shadow:0 6px 18px var(--shadow);flex:1;
-    }
-    .btn-ghost{background:#f1f3f5;color:#222;border:1px solid #e6e9ec;box-shadow:none}
-    #resultArea{margin-top:14px;padding:12px;border-radius:10px;background:#f6f8fa;border:1px solid #e9eef5;display:none}
-    #scanResult{word-break:break-all;margin:0 0 8px}
-    .small{font-size:13px;color:var(--muted)}
-    .row{display:flex;gap:10px;align-items:center}
-    input[type=file]{display:none}
-    .file-label{display:inline-block;padding:10px 12px;border-radius:8px;background:#eef6ff;color:var(--accent);cursor:pointer;border:1px dashed rgba(0,119,204,0.2)}
-    .hint{margin-top:8px;font-size:13px;color:var(--muted);text-align:center}
-    @media (max-width:520px){
-      .controls{flex-direction:column}
-      button{width:100%}
-    }
-  </style>
+        // --- Общие переменные и helpers ---
+        let alreadyHandled = false; // предотвращает дубликаты
+        function showPopup(message) {
+            if (tg && typeof tg.showPopup === 'function') {
+                tg.showPopup({ title: 'Информация', message: String(message), buttons: [{type: 'close'}] });
+            } else {
+                alert(message);
+            }
+        }
+
+        // Отправить данные в бота / Telegram (обязательно возвращаем данные в Telegram)
+        function sendToTelegramBot(scannedText) {
+            if (!scannedText) return;
+            // 1) Отправляем данные боту через WebApp API (web_app_data)
+            try {
+                if (tg && typeof tg.sendData === 'function') {
+                    tg.sendData(String(scannedText)); // это передаст данные боту и закроет Mini App
+                    // tg.sendData() часто закрывает мини-приложение; если нужно не закрывать — можно использовать fetch вместо sendData.
+                } else {
+                    console.warn('tg.sendData не поддерживается в этом окружении.');
+                }
+            } catch (e) {
+                console.warn('Ошибка tg.sendData:', e);
+            }
+
+            // 2) (опционально) — отправляем на ваш сервер параллельно (не вместо sendData)
+            // Если хотите отключить — удалите fetch.
+            fetch('/api/send-scaner-info/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: tg?.initDataUnsafe?.user?.id || null, result_scan: scannedText })
+            }).then(r => r.json()).then(data => {
+                // показываем сообщение, если нужно
+                showPopup(data?.message || '✅ Скан отправлен на сервер и в Telegram');
+            }).catch(() => {
+                showPopup('Ошибка отправки на сервер (но данные отправлены в Telegram, если доступен tg.sendData)');
+            });
+        }
+
+        // Универсальный обработчик результата сканирования
+        function handleScanned(scannedText, source = 'telegram') {
+            if (alreadyHandled) return;
+            alreadyHandled = true;
+
+            if (!scannedText) {
+                showPopup('Пустой результат сканирования');
+                return;
+            }
+
+            // Нативный сканер Telegram: если он использовался, то по спецификации
+            // можно вызвать closeScanQrPopup() или вернуть true в callback чтобы закрыть popup.
+            try {
+                if (tg && typeof tg.closeScanQrPopup === 'function' && source === 'event') {
+                    // Если мы получили событие — закроем popup вручную (на всякий случай)
+                    tg.closeScanQrPopup();
+                }
+            } catch (e) { /* ignore */ }
+
+            // Отправляем в Telegram (и на сервер)
+            sendToTelegramBot(scannedText);
+        }
+
+        // --- Попытка использовать нативный Telegram-сканер ---
+        function openTelegramNativeScanner() {
+            if (!tg) {
+                showPopup('Telegram WebApp API не найден. Открываю fallback-сканер...');
+                startCameraFallback(); // fallback
+                return;
+            }
+
+            // prefer showScanQrPopup (callback style)
+            if (typeof tg.showScanQrPopup === 'function') {
+                alreadyHandled = false;
+                try {
+                    tg.showScanQrPopup({ text: 'Отсканируй СПБ QR-код' }, function(scannedText) {
+                        // callback: при возврате true — popup закроется
+                        if (scannedText) {
+                            handleScanned(scannedText, 'telegram-callback');
+                            return true; // закрыть нативный popup
+                        }
+                        return false;
+                    });
+                    // Подстраховка: слушаем событие qrTextReceived (на случай, если клиент шлёт его)
+                    if (typeof tg.onEvent === 'function') {
+                        // некоторые SDK используют tg.onEvent / tg.onEvent('qrTextReceived', handler)
+                        try {
+                            tg.onEvent('qrTextReceived', (payload) => {
+                                const text = payload?.text || payload || null;
+                                handleScanned(text, 'event');
+                            });
+                        } catch(e) { /* ignore */ }
+                    }
+                    return;
+                } catch (e) {
+                    console.warn('showScanQrPopup failed:', e);
+                    showPopup('Нативный сканер недоступен (ошибка клиента). Открываю fallback-сканер...');
+                    startCameraFallback();
+                    return;
+                }
+            }
+
+            // Альтернативный способ: послать web event напрямую (для старых интеграций)
+            try {
+                if (typeof window.parent !== 'undefined' && window.parent !== window) {
+                    const event = { eventType: 'web_app_open_scan_qr_popup', eventData: { text: 'Отсканируй СПБ QR-код' } };
+                    window.parent.postMessage(JSON.stringify(event), '*');
+                    // слушаем событие qrTextReceived через tg.onEvent (если доступно)
+                    if (typeof tg?.onEvent === 'function') {
+                        tg.onEvent('qrTextReceived', payload => {
+                            const text = payload?.text || payload || null;
+                            handleScanned(text, 'event-postmessage');
+                        });
+                    }
+                    return;
+                }
+            } catch (e) { /* ignore */ }
+
+            // Если ни один метод не сработал — fallback
+            showPopup('Нативный сканер Telegram не поддерживается в этом окружении. Включаю fallback-сканер (камера + jsQR).');
+            startCameraFallback();
+        }
+
+        // --- Fallback: ваш старый сканер на getUserMedia + jsQR ---
+        // (копия и упрощение вашего оригинального кода)
+        let fallbackStream = null;
+        let fallbackTrack = null;
+        let fallbackScanning = false;
+        async function startCameraFallback() {
+            // Если уже работает — ничего
+            if (fallbackScanning) return;
+            alreadyHandled = false;
+
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
+            const scannerLine = document.getElementById('scannerLine');
+            const qrHint = document.querySelector('.qr-hint');
+
+            try {
+                fallbackStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                video.srcObject = fallbackStream;
+                await video.play();
+                fallbackTrack = fallbackStream.getVideoTracks()[0];
+                fallbackScanning = true;
+                if (scannerLine) scannerLine.style.display = 'block';
+                tickFallback();
+            } catch (err) {
+                console.error('Ошибка камеры:', err);
+                showPopup(err.name === 'NotAllowedError' ? 'Доступ к камере запрещён. Разрешите в настройках.' : 'Не удалось открыть камеру: ' + err.message);
+            }
+        }
+
+        function stopCameraFallback() {
+            fallbackScanning = false;
+            try {
+                if (fallbackStream) fallbackStream.getTracks().forEach(t => t.stop());
+            } catch(e){}
+            fallbackStream = null;
+            fallbackTrack = null;
+            const scannerLine = document.getElementById('scannerLine');
+            if (scannerLine) scannerLine.style.display = 'none';
+        }
+
+        function tickFallback() {
+            if (!fallbackScanning) return;
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
+            const ctx = canvas.getContext('2d');
+
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
+                if (code && code.data) {
+                    stopCameraFallback();
+                    handleScanned(code.data, 'fallback');
+                    return;
+                }
+            }
+            requestAnimationFrame(tickFallback);
+        }
+
+        // --- Запуск по загрузке страницы ---
+        document.addEventListener('DOMContentLoaded', () => {
+            // кнопка фонарика (если есть) — убираем поведение старого скрипта: 
+            const torchBtn = document.getElementById('torchBtn');
+            if (torchBtn) {
+                torchBtn.addEventListener('click', () => {
+                    // В нативном сканере фонарик управляется самим Telegram-клиентом,
+                    // в fallback можно попытаться управлять через applyConstraints (как раньше).
+                    if (!fallbackTrack) {
+                        showPopup('Фонарик доступен только в режиме камеры (fallback).');
+                        return;
+                    }
+                    // toggle torch for fallback track (best-effort)
+                    const caps = fallbackTrack.getCapabilities ? fallbackTrack.getCapabilities() : {};
+                    if (caps.torch) {
+                        const settings = fallbackTrack.getSettings() || {};
+                        const current = settings.torch || false;
+                        fallbackTrack.applyConstraints({ advanced: [{ torch: !current }] }).catch(() => {
+                            showPopup('Не удалось переключить фонарик на этом устройстве.');
+                        });
+                    } else {
+                        showPopup('Фонарик не поддерживается на этом устройстве.');
+                    }
+                });
+            }
+
+            // Авто-открываем нативный сканер при открытии страницы:
+            openTelegramNativeScanner();
+        });
+
+        // На случай, если нужно явно вызвать из UI:
+        window.openTelegramNativeScanner = openTelegramNativeScanner;
+        window.startCameraFallback = startCameraFallback;
+        window.stopCameraFallback = stopCameraFallback;
+    </script>
 </head>
 <body>
-  <div class="wrap">
-    <div class="card">
-      <h1>Сканер QR-кодов</h1>
-
-      <div id="scanArea" aria-label="Область камеры для сканирования">
-        <video id="video" playsinline muted></video>
-        <canvas id="canvas"></canvas>
-        <div id="scannerLine" class="scanner-line" style="display:none"></div>
-        <div id="placeholder" style="position:absolute;color:#fff;text-shadow:0 2px 6px rgba(0,0,0,0.6);text-align:center;padding:12px">
-          <div style="font-size:18px;font-weight:700">Камера не включена</div>
-          <div class="small">Нажмите «Начать сканирование»</div>
-        </div>
-      </div>
-
-      <div class="controls">
-        <button id="toggleScanBtn" type="button">Начать сканирование</button>
-        <button id="stopBtn" class="btn-ghost" type="button" style="display:none">Остановить</button>
-
-        <!-- Файл-загрузка (fallback для десктопа/изображений) -->
-        <label for="fileInput" class="file-label" title="Загрузить картинку с QR">Загрузить изображение</label>
-        <input id="fileInput" type="file" accept="image/*" />
-      </div>
-
-      <div id="resultArea" aria-live="polite">
-        <p id="scanResult"></p>
-        <div class="row" style="margin-top:8px">
-          <button id="copyBtn" type="button">Копировать результат</button>
-          <button id="openBtn" class="btn-ghost" type="button">Открыть в новой вкладке</button>
-          <button id="sendToTelegramBtn" class="btn-ghost" type="button">Отправить в Telegram</button>
-        </div>
-        <div class="hint">Если ссылка — нажмите «Открыть в новой вкладке»</div>
-      </div>
-
-      <p class="hint" style="margin-top:14px">Если Web App Telegram доступен — будет использовано popup. Для отправки на сервер замените fetch URL в коде.</p>
+<div class="container">
+    <div class="header">
+        <h2>Сканирование QR</h2>
+        <h4>Отсканируй СПБ QR-код</h4>
     </div>
-  </div>
 
-  <script>
-    // Основные переменные
-    const video = document.getElementById('video');
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-    const toggleBtn = document.getElementById('toggleScanBtn');
-    const stopBtn = document.getElementById('stopBtn');
-    const scannerLine = document.getElementById('scannerLine');
-    const placeholder = document.getElementById('placeholder');
-    const resultArea = document.getElementById('resultArea');
-    const scanResultEl = document.getElementById('scanResult');
-    const copyBtn = document.getElementById('copyBtn');
-    const openBtn = document.getElementById('openBtn');
-    const sendToTelegramBtn = document.getElementById('sendToTelegramBtn');
-    const fileInput = document.getElementById('fileInput');
+    <div id="scanArea">
+        <!-- Видео/канвас нужны для fallback -->
+        <video id="video" playsinline muted></video>
+        <canvas id="canvas" style="display: none;"></canvas>
 
-    let scanning = false;
-    let videoStream = null;
-    let animationId = null;
-    let lastResult = '';
-
-    // Telegram WebApp object (если доступен)
-    const tg = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
-
-    function showPlaceholder(show){
-      placeholder.style.display = show ? 'block' : 'none';
-    }
-
-    function showScannerLine(show){
-      scannerLine.style.display = show ? 'block' : 'none';
-    }
-
-    async function startScanning(){
-      if (scanning) return;
-      try {
-        // Запрашиваем камеру (по возможности - заднюю)
-        videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
-        video.srcObject = videoStream;
-        video.setAttribute('playsinline', true);
-        await video.play();
-        showPlaceholder(false);
-        showScannerLine(true);
-        toggleBtn.textContent = 'Остановить сканирование';
-        stopBtn.style.display = 'inline-block';
-        scanning = true;
-        tick(); // запускаем цикл
-      } catch (err) {
-        console.error('Ошибка доступа к камере:', err);
-        alert('Не удалось получить доступ к камере: ' + (err && err.message ? err.message : err));
-      }
-    }
-
-    function stopScanning(){
-      if (!scanning && !videoStream) return;
-      if (videoStream) {
-        const tracks = videoStream.getTracks();
-        tracks.forEach(t => t.stop());
-        video.srcObject = null;
-        videoStream = null;
-      }
-      if (animationId) {
-        cancelAnimationFrame(animationId);
-        animationId = null;
-      }
-      scanning = false;
-      toggleBtn.textContent = 'Начать сканирование';
-      stopBtn.style.display = 'none';
-      showScannerLine(false);
-      showPlaceholder(true);
-    }
-
-    toggleBtn.addEventListener('click', () => {
-      if (scanning) stopScanning(); else startScanning();
-    });
-    stopBtn.addEventListener('click', stopScanning);
-
-    function tick(){
-      animationId = requestAnimationFrame(tick);
-
-      if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
-
-      // Подгоняем размер canvas под размер видео
-      if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight){
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-      }
-
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
-
-      if (code && code.data) {
-        // Если найден новый результат — показываем
-        if (code.data !== lastResult) {
-          lastResult = code.data;
-          onScanSuccess(code.data);
-        }
-      }
-    }
-
-    function onScanSuccess(text){
-      // Показываем результат
-      scanResultEl.textContent = text;
-      resultArea.style.display = 'block';
-      // Останавливаем поток (чтобы не тратить камеру)
-      stopScanning();
-      // Подсветка/корнеры можно добавить здесь (рисование квадрата вокруг QR)
-      // Если нужно — можно автоматически открывать ссылку: window.open(text, '_blank')
-    }
-
-    // Копирование результата
-    copyBtn.addEventListener('click', async () => {
-      const text = lastResult || scanResultEl.textContent;
-      if (!text) return;
-      try {
-        await navigator.clipboard.writeText(text);
-        showPopup('Скопировано в буфер обмена');
-      } catch (err) {
-        console.error('copy error', err);
-        alert('Не удалось скопировать текст');
-      }
-    });
-
-    // Открыть в новой вкладке (если это URL)
-    openBtn.addEventListener('click', () => {
-      const text = lastResult || scanResultEl.textContent;
-      if (!text) return;
-      // Простая проверка на URL
-      try {
-        const url = new URL(text);
-        window.open(url.href, '_blank');
-      } catch (e){
-        // не URL — просто показать сообщение
-        alert('Результат не является корректным URL:\n' + text);
-      }
-    });
-
-    // Отправка в Telegram (через WebApp popup или на сервер)
-    sendToTelegramBtn.addEventListener('click', async () => {
-      const text = lastResult || scanResultEl.textContent;
-      if (!text) return;
-      // Если есть Telegram WebApp — покажем popup и (если нужно) вызовем сервер
-      if (tg) {
-        try {
-          // Попытка показать popup через WebApp API
-          tg.showPopup({ title: 'Отправка', message: 'Отправляю данные в Telegram...', buttons: [{type:'close'}] });
-        } catch (e) {
-          console.warn('tg.showPopup failed', e);
-        }
-      }
-
-      // По умолчанию — отправим POST на /api/send-scaner-info/ (как в вашем примере).
-      // При необходимости поменяйте URL или payload.
-      try {
-        const userId = (tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.id) ? tg.initDataUnsafe.user.id : null;
-        const res = await fetch('/api/send-scaner-info/', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_id: userId, result_scan: text })
-        });
-        if (res.ok){
-          const json = await res.json().catch(()=>({message:'Отправлено'}));
-          showPopup(json.message || 'Данные отправлены');
-        } else {
-          showPopup('Сервер вернул ошибку при отправке');
-        }
-      } catch (err){
-        console.error('send error', err);
-        showPopup('Не удалось отправить данные на сервер');
-      }
-    });
-
-    // Функция показа popup — использует WebApp если есть, иначе alert
-    function showPopup(message){
-      if (tg && tg.showPopup) {
-        tg.showPopup({ title: 'Информация', message, buttons: [{type:'close'}] });
-      } else {
-        alert(message);
-      }
-    }
-
-    // Загрузка изображения (fallback)
-    fileInput.addEventListener('change', (e) => {
-      const file = e.target.files && e.target.files[0];
-      if (!file) return;
-      const img = new Image();
-      const reader = new FileReader();
-      reader.onload = () => {
-        img.onload = () => {
-          // ресайз canvas под изображение
-          canvas.width = img.naturalWidth;
-          canvas.height = img.naturalHeight;
-          ctx.drawImage(img, 0, 0);
-          const imageData = ctx.getImageData(0,0,canvas.width,canvas.height);
-          const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
-          if (code && code.data) {
-            lastResult = code.data;
-            onScanSuccess(code.data);
-          } else {
-            alert('QR-код не найден на изображении.');
-          }
-        };
-        img.onerror = () => alert('Не удалось загрузить изображение');
-        img.src = reader.result;
-      };
-      reader.readAsDataURL(file);
-      // очистим input чтобы можно было загрузить тот же файл повторно
-      fileInput.value = '';
-    });
-
-    // Инициализация: прячем выдачу
-    document.addEventListener('DOMContentLoaded', () => {
-      resultArea.style.display = 'none';
-      showPlaceholder(true);
-      // Если нужно: автоматически запускать Telegram WebApp ready
-      if (tg && tg.ready) {
-        try { tg.ready(); } catch(e){ /* ignore */ }
-      }
-    });
-
-    // Очистка при уходе со страницы
-    window.addEventListener('pagehide', stopScanning);
-    window.addEventListener('beforeunload', stopScanning);
-  </script>
+        <div class="frame"></div>
+        <div id="scannerLine" class="scanner-line" style="display:none"></div>
+        <div class="qr-hint">Наведите камеру на QR-код</div>
+    </div>
+</div>
 </body>
 </html>
