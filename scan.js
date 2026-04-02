@@ -12,16 +12,11 @@ let alreadyHandled = false;
 // Показываем всплывающее окно
 function showPopup(message) {
     if (tg && typeof tg.showPopup === 'function') {
-        tg.showScanQrPopup(
-            { text: 'Отсканируй СПБ QR-код' },
-            function (scannedText) {
-                if (scannedText) {
-                    handleScanned(scannedText, 'showScanQrPopup-callback');
-                    return false; // явно закрываем сканер
-                }
-                return false;
-            }
-        );
+        tg.showPopup({
+            title: 'Информация',
+            message: String(message),
+            buttons: [{type: 'close'}]
+        });
     } else {
         alert(message);
     }
@@ -98,7 +93,6 @@ function openTelegramNativeScanner() {
 
     alreadyHandled = false;
 
-    // 1. Основной способ — showScanQrPopup
     if (typeof tg.showScanQrPopup === 'function') {
         try {
             tg.showScanQrPopup(
@@ -106,12 +100,11 @@ function openTelegramNativeScanner() {
                 function (scannedText) {
                     if (scannedText) {
                         handleScanned(scannedText, 'showScanQrPopup-callback');
-                        return true;
+                        return false;        // ←←← ОБЯЗАТЕЛЬНО false
                     }
                     return false;
                 }
             );
-
             console.log('✅ Нативный сканер Telegram открыт');
             return;
         } catch (e) {
