@@ -6,6 +6,12 @@ if (tg) {
     try { if (tg.expand) tg.expand(); } catch(e) {}
 }
 
+// --- Диагностика при старте ---
+console.log('📱 TG version:', tg?.version);
+console.log('📱 sendData available:', typeof tg?.sendData);
+console.log('📱 showScanQrPopup available:', typeof tg?.showScanQrPopup);
+console.log('📱 onEvent available:', typeof tg?.onEvent);
+
 // --- Глобальные переменные ---
 let alreadyHandled = false;
 
@@ -38,18 +44,34 @@ function sendToTelegramBot(scannedText) {
                 if (tg.close) tg.close();
             }, 300);
         } else {
-            console.warn('tg.sendData не поддерживается');
-            showPopup('⚠️ tg.sendData не поддерживается в этом клиенте');
+            console.warn('⚠️ tg.sendData не поддерживается');
+            // Fallback: пробуем postMessage в родительский фрейм
+            try {
+                if (window.parent && window.parent !== window) {
+                    window.parent.postMessage(
+                        JSON.stringify({ eventType: 'web_app_data_send', eventData: { data: scannedText } }),
+                        '*'
+                    );
+                    console.log('📤 Отправили данные через postMessage');
+                } else {
+                    showPopup('⚠️ tg.sendData не поддерживается в этом клиенте.\n\nОткройте Mini App через кнопку в чате (не inline-кнопку).');
+                }
+            } catch(e) {
+                showPopup('⚠️ tg.sendData не поддерживается в этом клиенте.');
+            }
         }
     } catch (e) {
-        console.error('Ошибка tg.sendData:', e);
+        console.error('❌ Ошибка tg.sendData:', e);
         showPopup('❌ Ошибка отправки данных в Telegram');
     }
 }
 
 // Обработчик успешного сканирования
 function handleScanned(scannedText, source = 'unknown') {
-    if (alreadyHandled) return;
+    if (alreadyHandled) {
+        console.log('⚠️ Повторный вызов handleScanned проигнорирован, источник:', source);
+        return;
+    }
     alreadyHandled = true;
 
     console.log(`🔍 Сканирование успешно! Источник: ${source} | Текст:`, scannedText);
@@ -66,17 +88,26 @@ function handleScanned(scannedText, source = 'unknown') {
         }
     } catch (e) {}
 
+    // Останавливаем fallback-камеру если была запущена
+    stopCameraFallback();
+
     sendToTelegramBot(scannedText);
 }
 
 // === НАСТРОЙКА СОБЫТИЯ qrTextReceived (ГЛАВНЫЙ СПОСОБ) ===
 function setupQrEventListener() {
-    if (!tg || typeof tg.onEvent !== 'function') return;
+    if (!tg || typeof tg.onEvent !== 'function') {
+        console.warn('⚠️ tg.onEvent недоступен');
+        return;
+    }
 
     tg.onEvent('qrTextReceived', (payload) => {
+        console.log('📨 qrTextReceived сработал, payload:', payload);
         const scannedText = payload?.data || payload?.text || payload || null;
         if (scannedText) {
-            handleScanned(scannedText, 'qrTextReceived');
+            handleScanned(String(scannedText), 'qrTextReceived');
+        } else {
+            console.warn('⚠️ qrTextReceived: пустой payload', payload);
         }
     });
 
@@ -86,7 +117,7 @@ function setupQrEventListener() {
 // --- Открытие нативного сканера Telegram ---
 function openTelegramNativeScanner() {
     if (!tg) {
-        showPopup('Telegram WebApp API не найден. Запускаю fallback-камеру...');
+        console.warn('⚠️ Telegram WebApp API не найден. Запускаю fallback-камеру...');
         startCameraFallback();
         return;
     }
@@ -95,24 +126,18 @@ function openTelegramNativeScanner() {
 
     if (typeof tg.showScanQrPopup === 'function') {
         try {
-            tg.showScanQrPopup(
-                { text: 'Отсканируй СПБ QR-код' },
-                function (scannedText) {
-                    if (scannedText) {
-                        handleScanned(scannedText, 'showScanQrPopup-callback');
-                        return false;        // ←←← ОБЯЗАТЕЛЬНО false
-                    }
-                    return false;
-                }
-            );
+            // ВАЖНО: НЕ полагаемся на callback второго аргумента —
+            // он не работает во многих версиях клиента.
+            // Весь результат приходит через событие qrTextReceived.
+            tg.showScanQrPopup({ text: 'Отсканируй СПБ QR-код' });
             console.log('✅ Нативный сканер Telegram открыт');
             return;
         } catch (e) {
-            console.warn('showScanQrPopup упал:', e);
+            console.warn('⚠️ showScanQrPopup упал:', e);
         }
     }
 
-    // 2. Fallback для старых клиентов через postMessage
+    // Fallback для старых клиентов через postMessage
     try {
         if (window.parent && window.parent !== window) {
             const event = {
@@ -123,9 +148,11 @@ function openTelegramNativeScanner() {
             console.log('✅ Отправлен postMessage для открытия сканера');
             return;
         }
-    } catch (e) {}
+    } catch (e) {
+        console.warn('⚠️ postMessage не сработал:', e);
+    }
 
-    showPopup('Нативный сканер не поддерживается. Запускаю fallback-камеру...');
+    console.warn('⚠️ Нативный сканер не поддерживается. Запускаю fallback-камеру...');
     startCameraFallback();
 }
 
@@ -142,6 +169,11 @@ async function startCameraFallback() {
     const canvas = document.getElementById('canvas');
     const scannerLine = document.getElementById('scannerLine');
 
+    if (!video || !canvas) {
+        console.error('❌ Элементы video/canvas не найдены в DOM');
+        return;
+    }
+
     try {
         fallbackStream = await navigator.mediaDevices.getUserMedia({ 
             video: { facingMode: 'environment' } 
@@ -151,9 +183,10 @@ async function startCameraFallback() {
         fallbackTrack = fallbackStream.getVideoTracks()[0];
         fallbackScanning = true;
         if (scannerLine) scannerLine.style.display = 'block';
+        console.log('✅ Fallback-камера запущена');
         tickFallback();
     } catch (err) {
-        console.error('Ошибка камеры:', err);
+        console.error('❌ Ошибка камеры:', err);
         showPopup(err.name === 'NotAllowedError' 
             ? 'Доступ к камере запрещён. Разрешите в настройках.' 
             : 'Не удалось открыть камеру: ' + err.message);
@@ -161,6 +194,7 @@ async function startCameraFallback() {
 }
 
 function stopCameraFallback() {
+    if (!fallbackScanning) return;
     fallbackScanning = false;
     try {
         if (fallbackStream) fallbackStream.getTracks().forEach(t => t.stop());
@@ -169,6 +203,7 @@ function stopCameraFallback() {
     fallbackTrack = null;
     const scannerLine = document.getElementById('scannerLine');
     if (scannerLine) scannerLine.style.display = 'none';
+    console.log('🛑 Fallback-камера остановлена');
 }
 
 function tickFallback() {
@@ -189,8 +224,9 @@ function tickFallback() {
         });
 
         if (code && code.data) {
+            console.log('✅ jsQR нашёл QR-код:', code.data);
             stopCameraFallback();
-            handleScanned(code.data, 'fallback');
+            handleScanned(code.data, 'fallback-jsQR');
             return;
         }
     }
@@ -199,7 +235,7 @@ function tickFallback() {
 
 // --- Запуск приложения ---
 document.addEventListener('DOMContentLoaded', () => {
-    // Устанавливаем слушатель события qrTextReceived
+    // ПОРЯДОК ВАЖЕН: сначала слушатель, потом открываем сканер
     setupQrEventListener();
 
     const torchBtn = document.getElementById('torchBtn');
@@ -228,7 +264,7 @@ document.addEventListener('DOMContentLoaded', () => {
     openTelegramNativeScanner();
 });
 
-// Глобальные функции для отладки
+// Глобальные функции для отладки в консоли
 window.openTelegramNativeScanner = openTelegramNativeScanner;
 window.startCameraFallback = startCameraFallback;
 window.stopCameraFallback = stopCameraFallback;
