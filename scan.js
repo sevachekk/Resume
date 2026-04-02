@@ -11,6 +11,13 @@ console.log('📱 TG version:', tg?.version);
 console.log('📱 sendData available:', typeof tg?.sendData);
 console.log('📱 showScanQrPopup available:', typeof tg?.showScanQrPopup);
 console.log('📱 onEvent available:', typeof tg?.onEvent);
+console.log('📱 initData present:', !!tg?.initData);
+
+// =====================================================================
+// URL твоего FastAPI сервера — используется когда Mini App открыт
+// через inline-кнопку (tg.sendData в этом случае не работает)
+// =====================================================================
+const API_URL = 'https://sevakgrigoryan.vercel.app/api/send-scaner-info/';
 
 // --- Глобальные переменные ---
 let alreadyHandled = false;
@@ -28,41 +35,88 @@ function showPopup(message) {
     }
 }
 
-// Отправка данных в бот
+// =====================================================================
+// Определяем способ отправки:
+//   reply-кнопка  → initData заполнен → tg.sendData() работает
+//   inline-кнопка → initData тоже заполнен, НО sendData бросает исключение
+//                   или просто не доставляет данные боту
+//
+// Самый надёжный способ — всегда слать через API,
+// но если хочется оставить sendData для reply-кнопки:
+// tg.initData непустой в обоих случаях, поэтому различаем по
+// tg.initDataUnsafe.chat_type — при inline он равен 'sender'
+// =====================================================================
+function canUseSendData() {
+    if (!tg || typeof tg.sendData !== 'function') return false;
+    if (!tg.initData) return false;
+    // При открытии через inline-кнопку chat_type === 'sender'
+    // При открытии через reply-кнопку chat_type отсутствует или другой
+    const chatType = tg.initDataUnsafe?.chat_type;
+    return chatType !== 'sender';
+}
+
+// --- Отправка через fetch на FastAPI ---
+async function sendViaApi(scannedText) {
+    const user_id = tg?.initDataUnsafe?.user?.id;
+
+    if (!user_id) {
+        console.error('❌ user_id не определён в initDataUnsafe');
+        showPopup('Не удалось определить пользователя. Попробуйте перезапустить.');
+        return;
+    }
+
+    console.log('📡 Отправляем через API, user_id:', user_id);
+
+    try {
+        const resp = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ result_scan: scannedText, user_id: user_id })
+        });
+
+        if (resp.ok) {
+            console.log('✅ API ответил успехом');
+        } else {
+            const data = await resp.json().catch(() => ({}));
+            console.warn('⚠️ API вернул ошибку:', resp.status, data);
+            showPopup('Ошибка сервера: ' + (data?.message || resp.status));
+            return;
+        }
+    } catch (e) {
+        console.error('❌ Ошибка fetch:', e);
+        showPopup('Не удалось отправить данные. Проверьте соединение.');
+        return;
+    }
+
+    // Закрываем Mini App после успешной отправки
+    setTimeout(() => {
+        if (tg?.close) tg.close();
+    }, 300);
+}
+
+// --- Отправка данных в бот — автоматически выбирает способ ---
 function sendToTelegramBot(scannedText) {
     if (!scannedText) return;
 
     console.log('📤 Отправляем в бот:', scannedText);
+    console.log('📤 chat_type:', tg?.initDataUnsafe?.chat_type);
+    console.log('📤 canUseSendData:', canUseSendData());
 
-    try {
-        if (tg && typeof tg.sendData === 'function') {
+    if (canUseSendData()) {
+        // Открыто через reply-кнопку — tg.sendData работает
+        try {
             tg.sendData(String(scannedText));
-            console.log('✅ tg.sendData успешно вызван — Mini App должен закрыться');
-
-            // Принудительно закрываем Mini App
-            setTimeout(() => {
-                if (tg.close) tg.close();
-            }, 300);
-        } else {
-            console.warn('⚠️ tg.sendData не поддерживается');
-            // Fallback: пробуем postMessage в родительский фрейм
-            try {
-                if (window.parent && window.parent !== window) {
-                    window.parent.postMessage(
-                        JSON.stringify({ eventType: 'web_app_data_send', eventData: { data: scannedText } }),
-                        '*'
-                    );
-                    console.log('📤 Отправили данные через postMessage');
-                } else {
-                    showPopup('⚠️ tg.sendData не поддерживается в этом клиенте.\n\nОткройте Mini App через кнопку в чате (не inline-кнопку).');
-                }
-            } catch(e) {
-                showPopup('⚠️ tg.sendData не поддерживается в этом клиенте.');
-            }
+            console.log('✅ tg.sendData вызван (reply-кнопка)');
+            setTimeout(() => { if (tg.close) tg.close(); }, 300);
+        } catch (e) {
+            // Если sendData всё же упал — fallback на API
+            console.error('❌ tg.sendData упал, fallback на API:', e);
+            sendViaApi(scannedText);
         }
-    } catch (e) {
-        console.error('❌ Ошибка tg.sendData:', e);
-        showPopup('❌ Ошибка отправки данных в Telegram');
+    } else {
+        // Открыто через inline-кнопку — отправляем через API
+        console.log('📡 Используем API (inline-кнопка или sender)');
+        sendViaApi(scannedText);
     }
 }
 
@@ -126,9 +180,7 @@ function openTelegramNativeScanner() {
 
     if (typeof tg.showScanQrPopup === 'function') {
         try {
-            // ВАЖНО: НЕ полагаемся на callback второго аргумента —
-            // он не работает во многих версиях клиента.
-            // Весь результат приходит через событие qrTextReceived.
+            // НЕ полагаемся на callback — результат приходит через qrTextReceived
             tg.showScanQrPopup({ text: 'Отсканируй СПБ QR-код' });
             console.log('✅ Нативный сканер Telegram открыт');
             return;
