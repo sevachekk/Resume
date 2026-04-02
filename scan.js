@@ -2,8 +2,8 @@
 const tg = window.Telegram?.WebApp || null;
 
 if (tg) {
-    try { tg.ready(); } catch(e) {}
-    try { if (tg.expand) tg.expand(); } catch(e) {}
+    try { tg.ready(); } catch (e) {}
+    try { if (tg.expand) tg.expand(); } catch (e) {}
 }
 
 // --- Диагностика при старте ---
@@ -14,10 +14,9 @@ console.log('📱 onEvent available:', typeof tg?.onEvent);
 console.log('📱 initData present:', !!tg?.initData);
 
 // =====================================================================
-// URL твоего FastAPI сервера — используется когда Mini App открыт
-// через inline-кнопку (tg.sendData в этом случае не работает)
+// URL твоего FastAPI сервера
 // =====================================================================
-const API_URL = 'https://https://circularly-predeterminate-adelaida.ngrok-free.dev/api/send-scaner-info/';
+const API_URL = 'https://circularly-predeterminate-adelaida.ngrok-free.dev/api/send-scaner-info/';
 
 // --- Глобальные переменные ---
 let alreadyHandled = false;
@@ -28,31 +27,11 @@ function showPopup(message) {
         tg.showPopup({
             title: 'Информация',
             message: String(message),
-            buttons: [{type: 'close'}]
+            buttons: [{ type: 'close' }]
         });
     } else {
         alert(message);
     }
-}
-
-// =====================================================================
-// Определяем способ отправки:
-//   reply-кнопка  → initData заполнен → tg.sendData() работает
-//   inline-кнопка → initData тоже заполнен, НО sendData бросает исключение
-//                   или просто не доставляет данные боту
-//
-// Самый надёжный способ — всегда слать через API,
-// но если хочется оставить sendData для reply-кнопки:
-// tg.initData непустой в обоих случаях, поэтому различаем по
-// tg.initDataUnsafe.chat_type — при inline он равен 'sender'
-// =====================================================================
-function canUseSendData() {
-    if (!tg || typeof tg.sendData !== 'function') return false;
-    if (!tg.initData) return false;
-    // При открытии через inline-кнопку chat_type === 'sender'
-    // При открытии через reply-кнопку chat_type отсутствует или другой
-    const chatType = tg.initDataUnsafe?.chat_type;
-    return chatType !== 'sender';
 }
 
 // --- Отправка через fetch на FastAPI ---
@@ -71,7 +50,10 @@ async function sendViaApi(scannedText) {
         const resp = await fetch(API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ result_scan: scannedText, user_id: user_id })
+            body: JSON.stringify({
+                result_scan: scannedText,
+                user_id: user_id
+            })
         });
 
         if (resp.ok) {
@@ -92,32 +74,6 @@ async function sendViaApi(scannedText) {
     setTimeout(() => {
         if (tg?.close) tg.close();
     }, 300);
-}
-
-// --- Отправка данных в бот — автоматически выбирает способ ---
-function sendToTelegramBot(scannedText) {
-    if (!scannedText) return;
-
-    console.log('📤 Отправляем в бот:', scannedText);
-    console.log('📤 chat_type:', tg?.initDataUnsafe?.chat_type);
-    console.log('📤 canUseSendData:', canUseSendData());
-
-    if (canUseSendData()) {
-        // Открыто через reply-кнопку — tg.sendData работает
-        try {
-            tg.sendData(String(scannedText));
-            console.log('✅ tg.sendData вызван (reply-кнопка)');
-            setTimeout(() => { if (tg.close) tg.close(); }, 300);
-        } catch (e) {
-            // Если sendData всё же упал — fallback на API
-            console.error('❌ tg.sendData упал, fallback на API:', e);
-            sendViaApi(scannedText);
-        }
-    } else {
-        // Открыто через inline-кнопку — отправляем через API
-        console.log('📡 Используем API (inline-кнопка или sender)');
-        sendViaApi(scannedText);
-    }
 }
 
 // Обработчик успешного сканирования
@@ -145,7 +101,8 @@ function handleScanned(scannedText, source = 'unknown') {
     // Останавливаем fallback-камеру если была запущена
     stopCameraFallback();
 
-    sendToTelegramBot(scannedText);
+    // Отправляем только на API
+    sendViaApi(String(scannedText));
 }
 
 // === НАСТРОЙКА СОБЫТИЯ qrTextReceived (ГЛАВНЫЙ СПОСОБ) ===
@@ -180,7 +137,7 @@ function openTelegramNativeScanner() {
 
     if (typeof tg.showScanQrPopup === 'function') {
         try {
-            // НЕ полагаемся на callback — результат приходит через qrTextReceived
+            // Результат приходит через qrTextReceived
             tg.showScanQrPopup({ text: 'Отсканируй СПБ QR-код' });
             console.log('✅ Нативный сканер Telegram открыт');
             return;
@@ -227,34 +184,44 @@ async function startCameraFallback() {
     }
 
     try {
-        fallbackStream = await navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: 'environment' } 
+        fallbackStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment' }
         });
+
         video.srcObject = fallbackStream;
         await video.play();
+
         fallbackTrack = fallbackStream.getVideoTracks()[0];
         fallbackScanning = true;
+
         if (scannerLine) scannerLine.style.display = 'block';
+
         console.log('✅ Fallback-камера запущена');
         tickFallback();
     } catch (err) {
         console.error('❌ Ошибка камеры:', err);
-        showPopup(err.name === 'NotAllowedError' 
-            ? 'Доступ к камере запрещён. Разрешите в настройках.' 
-            : 'Не удалось открыть камеру: ' + err.message);
+        showPopup(
+            err.name === 'NotAllowedError'
+                ? 'Доступ к камере запрещён. Разрешите в настройках.'
+                : 'Не удалось открыть камеру: ' + err.message
+        );
     }
 }
 
 function stopCameraFallback() {
     if (!fallbackScanning) return;
     fallbackScanning = false;
+
     try {
         if (fallbackStream) fallbackStream.getTracks().forEach(t => t.stop());
-    } catch(e){}
+    } catch (e) {}
+
     fallbackStream = null;
     fallbackTrack = null;
+
     const scannerLine = document.getElementById('scannerLine');
     if (scannerLine) scannerLine.style.display = 'none';
+
     console.log('🛑 Fallback-камера остановлена');
 }
 
@@ -271,8 +238,8 @@ function tickFallback() {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code = jsQR(imageData.data, imageData.width, imageData.height, { 
-            inversionAttempts: "dontInvert" 
+        const code = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: 'dontInvert'
         });
 
         if (code && code.data) {
@@ -282,6 +249,7 @@ function tickFallback() {
             return;
         }
     }
+
     requestAnimationFrame(tickFallback);
 }
 
@@ -297,12 +265,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 showPopup('Фонарик доступен только в режиме камеры (fallback).');
                 return;
             }
+
             const caps = fallbackTrack.getCapabilities ? fallbackTrack.getCapabilities() : {};
             if (caps.torch) {
                 const settings = fallbackTrack.getSettings() || {};
                 const current = settings.torch || false;
-                fallbackTrack.applyConstraints({ 
-                    advanced: [{ torch: !current }] 
+
+                fallbackTrack.applyConstraints({
+                    advanced: [{ torch: !current }]
                 }).catch(() => {
                     showPopup('Не удалось переключить фонарик.');
                 });
