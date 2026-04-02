@@ -1,4 +1,4 @@
-<script>
+
 // --- UI / инициализация Telegram WebApp ---
 const tg = window.Telegram?.WebApp || null;
 
@@ -224,4 +224,4 @@ document.addEventListener('DOMContentLoaded', () => {
 window.openTelegramNativeScanner = openTelegramNativeScanner;
 window.startCameraFallback = startCameraFallback;
 window.stopCameraFallback = stopCameraFallback;
-</script>
+
