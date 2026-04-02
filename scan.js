@@ -17,7 +17,7 @@ console.log('📱 initData present:', !!tg?.initData);
 // URL твоего FastAPI сервера — используется когда Mini App открыт
 // через inline-кнопку (tg.sendData в этом случае не работает)
 // =====================================================================
-const API_URL = 'https://sevakgrigoryan.vercel.app/api/send-scaner-info/';
+const API_URL = 'https://https://circularly-predeterminate-adelaida.ngrok-free.dev/api/send-scaner-info/';
 
 // --- Глобальные переменные ---
 let alreadyHandled = false;
