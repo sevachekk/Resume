@@ -1,49 +1,48 @@
+<script>
 // --- UI / инициализация Telegram WebApp ---
 const tg = window.Telegram?.WebApp || null;
 
-// Покажем страницу и развернём (как было у вас)
+// Инициализация WebApp
 if (tg) {
     try { tg.ready(); } catch(e) {}
     try { if (tg.expand) tg.expand(); } catch(e) {}
 }
 
 // --- Общие переменные и helpers ---
-let alreadyHandled = false; // предотвращает дубликаты
+let alreadyHandled = false;
+
 function showPopup(message) {
     if (tg && typeof tg.showPopup === 'function') {
-        tg.showPopup({ title: 'Информация', message: String(message), buttons: [{type: 'close'}] });
+        tg.showPopup({ 
+            title: 'Информация', 
+            message: String(message), 
+            buttons: [{type: 'close'}] 
+        });
     } else {
         alert(message);
     }
 }
 
-// Отправить данные в бота / Telegram (обязательно возвращаем данные в Telegram)
+// Отправить данные в бота (ОБНОВЛЁННАЯ ВЕРСИЯ)
 function sendToTelegramBot(scannedText) {
     if (!scannedText) return;
-    // 1) Отправляем данные боту через WebApp API (web_app_data)
+
     try {
         if (tg && typeof tg.sendData === 'function') {
-            tg.sendData(String(scannedText)); // это передаст данные боту и закроет Mini App
-            // tg.sendData() часто закрывает мини-приложение; если нужно не закрывать — можно использовать fetch вместо sendData.
+            tg.sendData(String(scannedText));
+            console.log('✅ Данные успешно отправлены в Telegram через tg.sendData');
+            
+            // Опционально: сразу закрываем Mini App после отправки
+            // Раскомментируй, если хочешь автоматическое закрытие
+            // if (tg.close) tg.close();
         } else {
-            console.warn('tg.sendData не поддерживается в этом окружении.');
+            console.warn('tg.sendData не поддерживается в этом окружении');
+            showPopup('⚠️ tg.sendData не поддерживается');
         }
     } catch (e) {
-        console.warn('Ошибка tg.sendData:', e);
+        console.error('Ошибка tg.sendData:', e);
+        showPopup('❌ Ошибка отправки данных в Telegram');
     }
-
-    // 2) (опционально) — отправляем на ваш сервер параллельно (не вместо sendData)
-    // Если хотите отключить — удалите fetch.
-    fetch('/api/send-scaner-info/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: tg?.initDataUnsafe?.user?.id || null, result_scan: scannedText })
-    }).then(r => r.json()).then(data => {
-        // показываем сообщение, если нужно
-        showPopup(data?.message || '✅ Скан отправлен на сервер и в Telegram');
-    }).catch(() => {
-        showPopup('Ошибка отправки на сервер (но данные отправлены в Telegram, если доступен tg.sendData)');
-    });
 }
 
 // Универсальный обработчик результата сканирования
@@ -56,16 +55,14 @@ function handleScanned(scannedText, source = 'telegram') {
         return;
     }
 
-    // Нативный сканер Telegram: если он использовался, то по спецификации
-    // можно вызвать closeScanQrPopup() или вернуть true в callback чтобы закрыть popup.
+    // Закрываем нативный QR-попап Telegram
     try {
         if (tg && typeof tg.closeScanQrPopup === 'function' && source === 'event') {
-            // Если мы получили событие — закроем popup вручную (на всякий случай)
             tg.closeScanQrPopup();
         }
     } catch (e) { /* ignore */ }
 
-    // Отправляем в Telegram (и на сервер)
+    // Отправляем данные в бот
     sendToTelegramBot(scannedText);
 }
 
@@ -73,47 +70,46 @@ function handleScanned(scannedText, source = 'telegram') {
 function openTelegramNativeScanner() {
     if (!tg) {
         showPopup('Telegram WebApp API не найден. Открываю fallback-сканер...');
-        startCameraFallback(); // fallback
+        startCameraFallback();
         return;
     }
 
-    // prefer showScanQrPopup (callback style)
     if (typeof tg.showScanQrPopup === 'function') {
         alreadyHandled = false;
         try {
             tg.showScanQrPopup({ text: 'Отсканируй СПБ QR-код' }, function(scannedText) {
-            // callback: при возврате true — popup закроется
                 if (scannedText) {
                     handleScanned(scannedText, 'telegram-callback');
-                    return true; // закрыть нативный popup
+                    return true; // закрыть popup
                 }
                 return false;
             });
-            // Подстраховка: слушаем событие qrTextReceived (на случай, если клиент шлёт его)
+
+            // Подстраховка на событие
             if (typeof tg.onEvent === 'function') {
-                // некоторые SDK используют tg.onEvent / tg.onEvent('qrTextReceived', handler)
-                try {
-                    tg.onEvent('qrTextReceived', (payload) => {
-                        const text = payload?.text || payload || null;
-                        handleScanned(text, 'event');
-                    });
-                } catch(e) { /* ignore */ }
+                tg.onEvent('qrTextReceived', (payload) => {
+                    const text = payload?.text || payload || null;
+                    handleScanned(text, 'event');
+                });
             }
             return;
         } catch (e) {
             console.warn('showScanQrPopup failed:', e);
-            showPopup('Нативный сканер недоступен (ошибка клиента). Открываю fallback-сканер...');
+            showPopup('Нативный сканер недоступен. Открываю fallback-сканер...');
             startCameraFallback();
             return;
         }
     }
 
-    // Альтернативный способ: послать web event напрямую (для старых интеграций)
+    // Fallback для старых клиентов
     try {
-        if (typeof window.parent !== 'undefined' && window.parent !== window) {
-            const event = { eventType: 'web_app_open_scan_qr_popup', eventData: { text: 'Отсканируй СПБ QR-код' } };
+        if (window.parent && window.parent !== window) {
+            const event = { 
+                eventType: 'web_app_open_scan_qr_popup', 
+                eventData: { text: 'Отсканируй СПБ QR-код' } 
+            };
             window.parent.postMessage(JSON.stringify(event), '*');
-            // слушаем событие qrTextReceived через tg.onEvent (если доступно)
+
             if (typeof tg?.onEvent === 'function') {
                 tg.onEvent('qrTextReceived', payload => {
                     const text = payload?.text || payload || null;
@@ -124,28 +120,27 @@ function openTelegramNativeScanner() {
         }
     } catch (e) { /* ignore */ }
 
-    // Если ни один метод не сработал — fallback
-    showPopup('Нативный сканер Telegram не поддерживается в этом окружении. Включаю fallback-сканер (камера + jsQR).');
+    showPopup('Нативный сканер Telegram не поддерживается. Включаю fallback-сканер.');
     startCameraFallback();
 }
 
-// --- Fallback: ваш старый сканер на getUserMedia + jsQR ---
-// (копия и упрощение вашего оригинального кода)
+// --- Fallback: камера + jsQR (остаётся без изменений) ---
 let fallbackStream = null;
 let fallbackTrack = null;
 let fallbackScanning = false;
+
 async function startCameraFallback() {
-    // Если уже работает — ничего
     if (fallbackScanning) return;
     alreadyHandled = false;
 
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const scannerLine = document.getElementById('scannerLine');
-    const qrHint = document.querySelector('.qr-hint');
 
     try {
-        fallbackStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        fallbackStream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: 'environment' } 
+        });
         video.srcObject = fallbackStream;
         await video.play();
         fallbackTrack = fallbackStream.getVideoTracks()[0];
@@ -154,7 +149,9 @@ async function startCameraFallback() {
         tickFallback();
     } catch (err) {
         console.error('Ошибка камеры:', err);
-        showPopup(err.name === 'NotAllowedError' ? 'Доступ к камере запрещён. Разрешите в настройках.' : 'Не удалось открыть камеру: ' + err.message);
+        showPopup(err.name === 'NotAllowedError' 
+            ? 'Доступ к камере запрещён. Разрешите в настройках.' 
+            : 'Не удалось открыть камеру: ' + err.message);
     }
 }
 
@@ -171,6 +168,7 @@ function stopCameraFallback() {
 
 function tickFallback() {
     if (!fallbackScanning) return;
+
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
@@ -179,8 +177,12 @@ function tickFallback() {
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
+        const code = jsQR(imageData.data, imageData.width, imageData.height, { 
+            inversionAttempts: "dontInvert" 
+        });
+
         if (code && code.data) {
             stopCameraFallback();
             handleScanned(code.data, 'fallback');
@@ -192,23 +194,21 @@ function tickFallback() {
 
 // --- Запуск по загрузке страницы ---
 document.addEventListener('DOMContentLoaded', () => {
-    // кнопка фонарика (если есть) — убираем поведение старого скрипта: 
     const torchBtn = document.getElementById('torchBtn');
     if (torchBtn) {
         torchBtn.addEventListener('click', () => {
-            // В нативном сканере фонарик управляется самим Telegram-клиентом,
-            // в fallback можно попытаться управлять через applyConstraints (как раньше).
             if (!fallbackTrack) {
                 showPopup('Фонарик доступен только в режиме камеры (fallback).');
                 return;
             }
-            // toggle torch for fallback track (best-effort)
             const caps = fallbackTrack.getCapabilities ? fallbackTrack.getCapabilities() : {};
             if (caps.torch) {
                 const settings = fallbackTrack.getSettings() || {};
                 const current = settings.torch || false;
-                fallbackTrack.applyConstraints({ advanced: [{ torch: !current }] }).catch(() => {
-                    showPopup('Не удалось переключить фонарик на этом устройстве.');
+                fallbackTrack.applyConstraints({ 
+                    advanced: [{ torch: !current }] 
+                }).catch(() => {
+                    showPopup('Не удалось переключить фонарик.');
                 });
             } else {
                 showPopup('Фонарик не поддерживается на этом устройстве.');
@@ -216,11 +216,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Авто-открываем нативный сканер при открытии страницы:
+    // Автозапуск нативного сканера Telegram
     openTelegramNativeScanner();
 });
 
-// На случай, если нужно явно вызвать из UI:
+// Глобальные функции для отладки
 window.openTelegramNativeScanner = openTelegramNativeScanner;
 window.startCameraFallback = startCameraFallback;
 window.stopCameraFallback = stopCameraFallback;
+</script>
