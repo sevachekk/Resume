@@ -12,7 +12,16 @@ let alreadyHandled = false;
 // Показываем всплывающее окно
 function showPopup(message) {
     if (tg && typeof tg.showPopup === 'function') {
-        tg.showPopup({ title: 'Информация', message: String(message), buttons: [{type: 'close'}] });
+        tg.showScanQrPopup(
+            { text: 'Отсканируй СПБ QR-код' },
+            function (scannedText) {
+                if (scannedText) {
+                    handleScanned(scannedText, 'showScanQrPopup-callback');
+                    return false; // явно закрываем сканер
+                }
+                return false;
+            }
+        );
     } else {
         alert(message);
     }
