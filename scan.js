@@ -17,7 +17,7 @@ console.log('📱 initData present:', !!tg?.initData);
 // URL твоего FastAPI сервера
 // =====================================================================
 const API_URL = 'https://circularly-predeterminate-adelaida.ngrok-free.dev/api/send-scaner-info/';
-const API_KEY = 'h&K9#vP2@mR7!xY4$bN9*zT1^qL6&jW8; // замени на свой ключ
+const API_KEY = 'h&K9#vP2@mR7!xY4$bN9*zT1^qL6&jW8'; // замени на свой ключ
 
 // --- Глобальные переменные ---
 let alreadyHandled = false;
